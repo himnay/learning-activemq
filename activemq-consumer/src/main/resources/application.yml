@@ -6,15 +6,16 @@ spring:
     user: ${ACTIVEMQ_USER:admin}
     password: ${ACTIVEMQ_PASSWORD:admin}
   jms:
-    listener:
-      min-concurrency: 1
-      max-concurrency: 3
+    pub-sub-domain: true   # subscribe to topics; concurrency stays 1 — extra topic consumers would each get a copy
 
 server:
   port: 8081
 
 app:
-  queue: orders.queue
+  topics:
+    orders: orders.topic
+    payments: payments.topic
+    shipments: shipments.topic
 
 management:
   endpoints:

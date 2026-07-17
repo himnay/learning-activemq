@@ -10,27 +10,19 @@
         <version>0.0.1-SNAPSHOT</version>
     </parent>
 
-    <artifactId>activemq-consumer</artifactId>
-    <name>activemq-consumer</name>
-    <description>JMS listeners that consume typed events from ActiveMQ topics</description>
-
-    <dependencies>
-        <dependency>
-            <groupId>com.learnactivemq</groupId>
-            <artifactId>activemq-common</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-        </dependency>
-    </dependencies>
+    <artifactId>activemq-common</artifactId>
+    <name>activemq-common</name>
+    <description>Shared event records and JMS message-converter config for publisher and consumer</description>
 
     <build>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <!-- plain library jar — nothing to repackage -->
+                    <skip>true</skip>
+                </configuration>
             </plugin>
         </plugins>
     </build>

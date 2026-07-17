@@ -1,14 +1,18 @@
 # learning-activemq
 
-Spring Boot + ActiveMQ Classic learning project — a REST API publishes messages to a queue, a standalone consumer reads them via `@JmsListener`. Built on `spring-boot-starter-activemq` (JmsTemplate + auto-configured connection factory).
+Spring Boot + ActiveMQ Classic learning project — event-driven style. A REST API publishes three typed event classes to three JMS topics; a standalone consumer subscribes with one `@JmsListener` per topic. Events travel as JSON (Jackson message converter with type-id mappings) and the shared event records live in a common module.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    client[REST Client / Insomnia] -->|POST /v1/messages| pub[activemq-publisher :8080]
-    pub -->|JmsTemplate.convertAndSend| q[(orders.queue<br/>ActiveMQ :61616)]
-    q -->|"@JmsListener"| con[activemq-consumer :8081]
+    client[REST Client / Insomnia] -->|"POST /v1/events/*"| pub[activemq-publisher :8080]
+    pub -->|order-created| t1[(orders.topic)]
+    pub -->|payment-received| t2[(payments.topic)]
+    pub -->|shipment-dispatched| t3[(shipments.topic)]
+    t1 -->|"@JmsListener"| con[activemq-consumer :8081]
+    t2 -->|"@JmsListener"| con
+    t3 -->|"@JmsListener"| con
 ```
 
 ## Types 
@@ -17,12 +21,25 @@ flowchart LR
 
 ## Modules
 
-| Module               | Port | What it does                                                                                                |
-|----------------------|------|-------------------------------------------------------------------------------------------------------------|
-| `activemq-publisher` | 8080 | REST API (`POST /v1/messages`) → publishes to `orders.queue` via `JmsTemplate`, stamps a `messageId` header |
-| `activemq-consumer`  | 8081 | `@JmsListener` on `orders.queue`, logs payload + `messageId`; listener concurrency 1–3                      |
+| Module               | Port | What it does                                                                              |
+|----------------------|------|-------------------------------------------------------------------------------------------|
+| `activemq-common`    | —    | Shared library: the three event records + `JmsEventConverterConfig` (JSON converter)      |
+| `activemq-publisher` | 8080 | REST API (`POST /v1/events/*`) → builds an event, publishes it to its topic, stamps `messageId` |
+| `activemq-consumer`  | 8081 | Three `@JmsListener`s (one per topic) — deserialize the typed event and log it            |
 
-Both modules inherit from the root POM (shared: `spring-boot-starter-activemq`, actuator, Lombok, test) which inherits from `super-pom` (Spring Boot parent, Java toolchain, BOM).
+All modules inherit from the root POM (shared: `spring-boot-starter-activemq`, actuator, Lombok, test) which inherits from `super-pom` (Spring Boot parent, Java toolchain, BOM).
+
+## Events
+
+| Event                    | Topic             | Fields                                             |
+|--------------------------|-------------------|----------------------------------------------------|
+| `OrderCreatedEvent`      | `orders.topic`    | orderId, product, quantity, amount, createdAt      |
+| `PaymentReceivedEvent`   | `payments.topic`  | paymentId, orderId, amount, method, receivedAt     |
+| `ShipmentDispatchedEvent`| `shipments.topic` | shipmentId, orderId, carrier, trackingNumber, dispatchedAt |
+
+Serialization: `JacksonJsonMessageConverter` writes JSON text messages and sets an `_event` type-id header (`order-created`, `payment-received`, `shipment-dispatched`). The consumer maps that header back to its event class — both sides share the records via `activemq-common`, and the type-id (not the class name) travels on the wire.
+
+Topics are pub/sub (`spring.jms.pub-sub-domain: true` on both sides): every live subscriber gets a copy, and listener concurrency stays at 1 — extra topic consumers would each receive a duplicate.
 
 ## Prerequisites
 
@@ -44,50 +61,59 @@ mvn -pl activemq-consumer spring-boot:run
 # 4. Start publisher (terminal 2)
 mvn -pl activemq-publisher spring-boot:run
 
-# 5. Publish a message
-curl -X POST http://localhost:8080/v1/messages \
+# 5. Publish events
+curl -X POST http://localhost:8080/v1/events/orders \
   -H "Content-Type: application/json" \
-  -d '{"content": "Hello ActiveMQ"}'
+  -d '{"product": "Laptop", "quantity": 2, "amount": 2499.98}'
+
+curl -X POST http://localhost:8080/v1/events/payments \
+  -H "Content-Type: application/json" \
+  -d '{"orderId": "<orderId from above>", "amount": 2499.98, "method": "CARD"}'
+
+curl -X POST http://localhost:8080/v1/events/shipments \
+  -H "Content-Type: application/json" \
+  -d '{"orderId": "<orderId>", "carrier": "DHL", "trackingNumber": "DHL-123456"}'
 ```
 
-Consumer log shows:
+Consumer log shows one line per event:
 
 ```
-Consumed message id=<uuid> payload=Hello ActiveMQ
+Consumed order-created id=<uuid> orderId=<uuid> product=Laptop qty=2 amount=2499.98
+Consumed payment-received id=<uuid> paymentId=<uuid> orderId=<...> amount=2499.98 method=CARD
+Consumed shipment-dispatched id=<uuid> shipmentId=<uuid> orderId=<...> carrier=DHL tracking=DHL-123456
 ```
 
 ## API
 
-### `POST /v1/messages` → `202 Accepted`
-
-Request:
-
-```json
-{ "content": "Hello ActiveMQ" }
-```
-
-Response:
+All endpoints return `202 Accepted` with the same response shape:
 
 ```json
 {
   "messageId": "1c1f9d2e-…",
-  "queue": "orders.queue",
+  "eventType": "order-created",
+  "topic": "orders.topic",
   "publishedAt": "2026-07-17T19:00:00Z"
 }
 ```
 
-`content` is `@NotBlank` — empty payloads get `400`.
+| Endpoint                   | Request body                                            | Validation                        |
+|----------------------------|---------------------------------------------------------|-----------------------------------|
+| `POST /v1/events/orders`   | `{"product", "quantity", "amount"}`                     | product not blank, both positive  |
+| `POST /v1/events/payments` | `{"orderId", "amount", "method"}`                       | orderId/method not blank, amount positive |
+| `POST /v1/events/shipments`| `{"orderId", "carrier", "trackingNumber"}`              | all not blank                     |
+
+Invalid payloads get `400`. The server generates the entity id (`orderId`, `paymentId`, `shipmentId`) and timestamp.
 
 ## ActiveMQ
 
-| Thing                 | Value                                       |
-|-----------------------|---------------------------------------------|
-| Broker (OpenWire/JMS) | `tcp://localhost:61616`                     |
-| Web console           | <http://localhost:8161> — `admin` / `admin` |
-| Queue                 | `orders.queue`                              |
-| Image                 | `apache/activemq-classic:6.1.7`             |
+| Thing                 | Value                                            |
+|-----------------------|--------------------------------------------------|
+| Broker (OpenWire/JMS) | `tcp://localhost:61616`                          |
+| Web console           | <http://localhost:8161> — `admin` / `admin`      |
+| Topics                | `orders.topic`, `payments.topic`, `shipments.topic` |
+| Image                 | `apache/activemq-classic:6.1.7`                  |
 
-Watch the queue in the console under **Queues** — enqueued/dequeued counters move as you publish.
+Watch the topics in the console under **Topics** — enqueued/dequeued counters move as you publish. Start the consumer first: topic messages are not retained for subscribers that aren't connected.
 
 ## Configuration
 
@@ -98,11 +124,11 @@ Overridable via env vars (12-factor style):
 | `ACTIVEMQ_BROKER_URL`                 | `tcp://localhost:61616` | both    |
 | `ACTIVEMQ_USER` / `ACTIVEMQ_PASSWORD` | `admin` / `admin`       | both    |
 
-Queue name lives in `app.queue` in each module's `application.yml`.
+Topic names live under `app.topics.*` in each module's `application.yml`.
 
 ## Insomnia
 
-Import `insomnia-collection.json` — publish request + health checks for both modules.
+Import `insomnia-collection.json` — one request per event type + health checks for both modules.
 
 ## Observability
 

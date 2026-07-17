@@ -16,9 +16,10 @@
     <version>0.0.1-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>learning-activemq</name>
-    <description>Root POM — ActiveMQ learning modules: REST publisher and JMS consumer</description>
+    <description>Root POM — event-driven ActiveMQ learning modules: shared events, REST publisher, JMS consumer</description>
 
     <modules>
+        <module>activemq-common</module>
         <module>activemq-publisher</module>
         <module>activemq-consumer</module>
     </modules>

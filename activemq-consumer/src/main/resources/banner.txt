@@ -7,7 +7,7 @@ ActiveMQ Consumer
 
 :: Project Metadata ::
 - Project Name      : activemq-consumer
-- Description       : @JmsListener on orders.queue — logs payload + messageId, concurrency 1-3
+- Description       : @JmsListener per topic — consumes typed events, logs payload + messageId
 - Group Id          : com.learnactivemq
 - Artifact Id       : activemq-consumer
 - Project Version   : 0.0.1-SNAPSHOT
@@ -15,4 +15,4 @@ ActiveMQ Consumer
 - Java Version      : ${java.version}
 - Port              : 8081
 - Broker            : ${spring.activemq.broker-url:tcp://localhost:61616}
-- Queue             : ${app.queue:orders.queue}
+- Topics            : ${app.topics.orders:orders.topic}, ${app.topics.payments:payments.topic}, ${app.topics.shipments:shipments.topic}
