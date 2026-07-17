@@ -1,0 +1,24 @@
+services:
+
+  # ── ActiveMQ Classic ───────────────────────────────────────────────────────
+  activemq:
+    image: apache/activemq-classic:6.1.7
+    container_name: activemq
+    ports:
+      - "61616:61616"   # OpenWire — JMS clients connect here
+      - "8161:8161"     # Web console — http://localhost:8161 (admin/admin)
+    environment:
+      ACTIVEMQ_CONNECTION_USER: admin
+      ACTIVEMQ_CONNECTION_PASSWORD: admin
+      ACTIVEMQ_WEB_USER: admin
+      ACTIVEMQ_WEB_PASSWORD: admin
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/61616' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - activemq-data:/opt/apache-activemq/data
+
+volumes:
+  activemq-data:

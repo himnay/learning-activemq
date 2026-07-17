@@ -1,0 +1,64 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-07-17T00:00:00.000Z",
+  "__export_source": "learning-activemq",
+  "resources": [
+    {
+      "_id": "wrk_learning_activemq",
+      "_type": "workspace",
+      "name": "Learning ActiveMQ",
+      "description": "REST publisher + JMS consumer over ActiveMQ Classic"
+    },
+
+    {
+      "_id": "fld_publisher",
+      "_type": "request_group",
+      "parentId": "wrk_learning_activemq",
+      "name": "Publisher — REST API (port 8080)",
+      "description": "Publishes messages to orders.queue"
+    },
+
+    {
+      "_id": "req_post_message",
+      "_type": "request",
+      "parentId": "fld_publisher",
+      "name": "POST — Publish Message",
+      "method": "POST",
+      "url": "http://localhost:8080/v1/messages",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"content\": \"Hello ActiveMQ from Insomnia\"\n}"
+      }
+    },
+
+    {
+      "_id": "req_publisher_health",
+      "_type": "request",
+      "parentId": "fld_publisher",
+      "name": "GET — Publisher Health",
+      "method": "GET",
+      "url": "http://localhost:8080/actuator/health"
+    },
+
+    {
+      "_id": "fld_consumer",
+      "_type": "request_group",
+      "parentId": "wrk_learning_activemq",
+      "name": "Consumer — Actuator (port 8081)",
+      "description": "Consumer has no business endpoints — messages arrive via JMS listener"
+    },
+
+    {
+      "_id": "req_consumer_health",
+      "_type": "request",
+      "parentId": "fld_consumer",
+      "name": "GET — Consumer Health",
+      "method": "GET",
+      "url": "http://localhost:8081/actuator/health"
+    }
+  ]
+}
