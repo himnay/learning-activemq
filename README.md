@@ -43,6 +43,34 @@ Topics are pub/sub (`spring.jms.pub-sub-domain: true` on both sides): every live
 
 Every listener also logs the JMS destination it consumed from (`from=topic://orders.topic`, `from=queue://Consumer.workerA.VirtualTopic.orders`) via the `jms_destination` header.
 
+## Topics vs Queues in ActiveMQ
+
+| Aspect                | Queue (point-to-point)                          | Topic (pub/sub)                                     |
+|-----------------------|-------------------------------------------------|-----------------------------------------------------|
+| Delivery              | Each message goes to exactly **one** consumer   | Each message goes to **every** active subscriber    |
+| Multiple consumers    | Compete — broker round-robins between them      | Duplicate — each one gets its own copy              |
+| Offline consumer      | Messages wait in the queue (retained)           | Message lost unless subscriber is durable           |
+| Browsing (console/GUI)| Yes — pending messages + bodies visible         | No — only enqueue/dequeue counters                  |
+| Typical use           | Work distribution, task processing              | Event broadcast, notifications                      |
+| Spring switch         | `spring.jms.pub-sub-domain: false` (default)    | `spring.jms.pub-sub-domain: true`                   |
+
+**Virtual topics** combine both: publish once to a topic, consume from queues. The broker watches the naming convention — any queue named `Consumer.<group>.VirtualTopic.<name>` automatically receives a **copy** of every message published to topic `VirtualTopic.<name>`. No broker config needed, just the names.
+
+- Each *group queue* gets all messages (topic-style fan-out across groups).
+- Within one group queue, competing consumers split them round-robin (queue-style work sharing).
+- Same mental model as Kafka consumer groups: group = "gets all the data", consumers in the group = "share the work".
+
+What this project runs:
+
+| Kind          | Destination                                            | Consumers                             |
+|---------------|--------------------------------------------------------|---------------------------------------|
+| Plain topic   | `orders.topic`, `payments.topic`, `shipments.topic`    | 1 topic listener each                 |
+| Virtual topic | `VirtualTopic.orders` (publish side only)              | — (broker copies into queues below)   |
+| Queue         | `Consumer.workerA.VirtualTopic.orders`                 | 3 competing consumers (round-robin)   |
+| Queue         | `Consumer.workerB.VirtualTopic.orders`                 | 3 competing consumers (round-robin)   |
+
+So one bulk message is copied **twice** (once per worker queue), and inside each queue exactly one of the 3 consumers receives it. 100 published → 100 in workerA + 100 in workerB → ~33/33/34 per consumer thread.
+
 ## Round-robin demo (virtual topic)
 
 `POST /v1/events/orders/bulk?count=100` publishes a numbered burst of `OrderCreatedEvent`s to the **virtual topic** `VirtualTopic.orders`. The broker mirrors every message into each `Consumer.*.VirtualTopic.orders` queue, and inside a queue the competing consumers split the work round-robin:
