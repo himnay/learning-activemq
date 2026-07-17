@@ -11,12 +11,16 @@ flowchart LR
     q -->|"@JmsListener"| con[activemq-consumer :8081]
 ```
 
+## Types 
+
+![messaging-broker-types.png](images/messaging-broker-types.png)
+
 ## Modules
 
-| Module | Port | What it does |
-|---|---|---|
+| Module               | Port | What it does                                                                                                |
+|----------------------|------|-------------------------------------------------------------------------------------------------------------|
 | `activemq-publisher` | 8080 | REST API (`POST /v1/messages`) → publishes to `orders.queue` via `JmsTemplate`, stamps a `messageId` header |
-| `activemq-consumer` | 8081 | `@JmsListener` on `orders.queue`, logs payload + `messageId`; listener concurrency 1–3 |
+| `activemq-consumer`  | 8081 | `@JmsListener` on `orders.queue`, logs payload + `messageId`; listener concurrency 1–3                      |
 
 Both modules inherit from the root POM (shared: `spring-boot-starter-activemq`, actuator, Lombok, test) which inherits from `super-pom` (Spring Boot parent, Java toolchain, BOM).
 
@@ -76,12 +80,12 @@ Response:
 
 ## ActiveMQ
 
-| Thing | Value |
-|---|---|
-| Broker (OpenWire/JMS) | `tcp://localhost:61616` |
-| Web console | <http://localhost:8161> — `admin` / `admin` |
-| Queue | `orders.queue` |
-| Image | `apache/activemq-classic:6.1.7` |
+| Thing                 | Value                                       |
+|-----------------------|---------------------------------------------|
+| Broker (OpenWire/JMS) | `tcp://localhost:61616`                     |
+| Web console           | <http://localhost:8161> — `admin` / `admin` |
+| Queue                 | `orders.queue`                              |
+| Image                 | `apache/activemq-classic:6.1.7`             |
 
 Watch the queue in the console under **Queues** — enqueued/dequeued counters move as you publish.
 
@@ -89,10 +93,10 @@ Watch the queue in the console under **Queues** — enqueued/dequeued counters m
 
 Overridable via env vars (12-factor style):
 
-| Env var | Default | Used by |
-|---|---|---|
-| `ACTIVEMQ_BROKER_URL` | `tcp://localhost:61616` | both |
-| `ACTIVEMQ_USER` / `ACTIVEMQ_PASSWORD` | `admin` / `admin` | both |
+| Env var                               | Default                 | Used by |
+|---------------------------------------|-------------------------|---------|
+| `ACTIVEMQ_BROKER_URL`                 | `tcp://localhost:61616` | both    |
+| `ACTIVEMQ_USER` / `ACTIVEMQ_PASSWORD` | `admin` / `admin`       | both    |
 
 Queue name lives in `app.queue` in each module's `application.yml`.
 

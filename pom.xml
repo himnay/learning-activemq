@@ -28,7 +28,6 @@
         <maven-surefire-plugin.version>3.5.3</maven-surefire-plugin.version>
     </properties>
 
-    <!-- Shared dependencies for all modules -->
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>

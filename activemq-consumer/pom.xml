@@ -15,7 +15,6 @@
     <description>JMS listener that consumes messages from an ActiveMQ queue</description>
 
     <dependencies>
-        <!-- Web only for HTTP actuator endpoints (health/metrics) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>

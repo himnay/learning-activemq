@@ -1,6 +1,4 @@
 services:
-
-  # ── ActiveMQ Classic ───────────────────────────────────────────────────────
   activemq:
     image: apache/activemq-classic:6.1.7
     container_name: activemq
