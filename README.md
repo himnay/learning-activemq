@@ -8,7 +8,7 @@ Spring Boot + ActiveMQ Classic learning project — a REST API publishes message
 flowchart LR
     client[REST Client / Insomnia] -->|POST /v1/messages| pub[activemq-publisher :8080]
     pub -->|JmsTemplate.convertAndSend| q[(orders.queue<br/>ActiveMQ :61616)]
-    q -->|@JmsListener| con[activemq-consumer :8081]
+    q -->|"@JmsListener"| con[activemq-consumer :8081]
 ```
 
 ## Modules
