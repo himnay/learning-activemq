@@ -21,25 +21,46 @@ flowchart LR
 
 ## Modules
 
-| Module               | Port | What it does                                                                              |
-|----------------------|------|-------------------------------------------------------------------------------------------|
-| `activemq-common`    | —    | Shared library: the three event records + `JmsEventConverterConfig` (JSON converter)      |
-| `activemq-publisher` | 8080 | REST API (`POST /v1/events/*`) → builds an event, publishes it to its topic, stamps `messageId` |
-| `activemq-consumer`  | 8081 | Three `@JmsListener`s (one per topic) — deserialize the typed event and log it            |
+| Module                | Port | What it does                                                                                    |
+|-----------------------|------|-------------------------------------------------------------------------------------------------|
+| `activemq-common`     | —    | Shared library: the three event records + `JmsEventConverterConfig` (JSON converter)            |
+| `activemq-publisher`  | 8080 | REST API (`POST /v1/events/*`) → builds an event, publishes it to its topic, stamps `messageId` |
+| `activemq-consumer`   | 8081 | Three `@JmsListener`s (one per topic) — deserialize the typed event and log it                  |
 
 All modules inherit from the root POM (shared: `spring-boot-starter-activemq`, actuator, Lombok, test) which inherits from `super-pom` (Spring Boot parent, Java toolchain, BOM).
 
 ## Events
 
-| Event                    | Topic             | Fields                                             |
-|--------------------------|-------------------|----------------------------------------------------|
-| `OrderCreatedEvent`      | `orders.topic`    | orderId, product, quantity, amount, createdAt      |
-| `PaymentReceivedEvent`   | `payments.topic`  | paymentId, orderId, amount, method, receivedAt     |
-| `ShipmentDispatchedEvent`| `shipments.topic` | shipmentId, orderId, carrier, trackingNumber, dispatchedAt |
+| Event                     | Topic              | Fields                                                     |
+|---------------------------|--------------------|------------------------------------------------------------|
+| `OrderCreatedEvent`       | `orders.topic`     | orderId, product, quantity, amount, createdAt              |
+| `PaymentReceivedEvent`    | `payments.topic`   | paymentId, orderId, amount, method, receivedAt             |
+| `ShipmentDispatchedEvent` | `shipments.topic`  | shipmentId, orderId, carrier, trackingNumber, dispatchedAt |
 
 Serialization: `JacksonJsonMessageConverter` writes JSON text messages and sets an `_event` type-id header (`order-created`, `payment-received`, `shipment-dispatched`). The consumer maps that header back to its event class — both sides share the records via `activemq-common`, and the type-id (not the class name) travels on the wire.
 
 Topics are pub/sub (`spring.jms.pub-sub-domain: true` on both sides): every live subscriber gets a copy, and listener concurrency stays at 1 — extra topic consumers would each receive a duplicate.
+
+Every listener also logs the JMS destination it consumed from (`from=topic://orders.topic`, `from=queue://Consumer.workerA.VirtualTopic.orders`) via the `jms_destination` header.
+
+## Round-robin demo (virtual topic)
+
+`POST /v1/events/orders/bulk?count=100` publishes a numbered burst of `OrderCreatedEvent`s to the **virtual topic** `VirtualTopic.orders`. The broker mirrors every message into each `Consumer.*.VirtualTopic.orders` queue, and inside a queue the competing consumers split the work round-robin:
+
+```
+publisher ──▶ VirtualTopic.orders ──▶ Consumer.workerA.VirtualTopic.orders ──▶ 3 competing consumers (~33/33/34)
+                                  └─▶ Consumer.workerB.VirtualTopic.orders ──▶ 3 competing consumers (~33/33/34)
+```
+
+- **Fan-out across queues**: workerA and workerB each receive all 100 (copies).
+- **Round-robin within a queue**: the 3 consumers (`queueListenerFactory`, concurrency 3) alternate — watch `seq=1/2/3/4…` land on threads `#-1/#-2/#-3/#-1…` in the consumer log.
+- Virtual-topic queues are real queues — browsable in the web console under **Queues**, unlike plain topics.
+
+```bash
+curl -X POST 'http://localhost:8080/v1/events/orders/bulk?count=100' \
+  -H "Content-Type: application/json" \
+  -d '{"product": "Widget", "quantity": 1, "amount": 9.99}'
+```
 
 ## Prerequisites
 
@@ -96,22 +117,24 @@ All endpoints return `202 Accepted` with the same response shape:
 }
 ```
 
-| Endpoint                   | Request body                                            | Validation                        |
-|----------------------------|---------------------------------------------------------|-----------------------------------|
-| `POST /v1/events/orders`   | `{"product", "quantity", "amount"}`                     | product not blank, both positive  |
-| `POST /v1/events/payments` | `{"orderId", "amount", "method"}`                       | orderId/method not blank, amount positive |
-| `POST /v1/events/shipments`| `{"orderId", "carrier", "trackingNumber"}`              | all not blank                     |
+| Endpoint                    | Request body                                            | Validation                                |
+|-----------------------------|---------------------------------------------------------|-------------------------------------------|
+| `POST /v1/events/orders`    | `{"product", "quantity", "amount"}`                     | product not blank, both positive          |
+| `POST /v1/events/payments`  | `{"orderId", "amount", "method"}`                       | orderId/method not blank, amount positive |
+| `POST /v1/events/shipments` | `{"orderId", "carrier", "trackingNumber"}`              | all not blank                             |
 
 Invalid payloads get `400`. The server generates the entity id (`orderId`, `paymentId`, `shipmentId`) and timestamp.
 
 ## ActiveMQ
 
-| Thing                 | Value                                            |
-|-----------------------|--------------------------------------------------|
-| Broker (OpenWire/JMS) | `tcp://localhost:61616`                          |
-| Web console           | <http://localhost:8161> — `admin` / `admin`      |
+| Thing                 | Value                                               |
+|-----------------------|-----------------------------------------------------|
+| Broker (OpenWire/JMS) | `tcp://localhost:61616`                             |
+| Web console           | <http://localhost:8161> — `admin` / `admin`         |
 | Topics                | `orders.topic`, `payments.topic`, `shipments.topic` |
-| Image                 | `apache/activemq-classic:6.1.7`                  |
+| Image                 | `apache/activemq-classic:6.1.7`                     |
+
+![messaging-broker-gui.png](images/messaging-broker-gui.png)
 
 Watch the topics in the console under **Topics** — enqueued/dequeued counters move as you publish. Start the consumer first: topic messages are not retained for subscribers that aren't connected.
 

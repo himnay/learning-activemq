@@ -36,6 +36,22 @@
     },
 
     {
+      "_id": "req_post_order_burst",
+      "_type": "request",
+      "parentId": "fld_publisher",
+      "name": "POST — Bulk 100 Orders (round-robin demo)",
+      "method": "POST",
+      "url": "http://localhost:8080/v1/events/orders/bulk?count=100",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"product\": \"Widget\",\n  \"quantity\": 1,\n  \"amount\": 9.99\n}"
+      }
+    },
+
+    {
       "_id": "req_post_payment_event",
       "_type": "request",
       "parentId": "fld_publisher",

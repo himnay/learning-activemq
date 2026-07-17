@@ -16,6 +16,7 @@ app:
     orders: orders.topic
     payments: payments.topic
     shipments: shipments.topic
+    virtual-orders: VirtualTopic.orders   # round-robin demo — broker mirrors into Consumer.*.VirtualTopic.orders queues
 
 management:
   endpoints:

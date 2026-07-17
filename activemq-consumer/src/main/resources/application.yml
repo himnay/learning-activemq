@@ -16,6 +16,11 @@ app:
     orders: orders.topic
     payments: payments.topic
     shipments: shipments.topic
+  queues:
+    # virtual-topic worker queues — broker copies every VirtualTopic.orders message
+    # into each queue; competing consumers inside a queue get them round-robin
+    worker-a: Consumer.workerA.VirtualTopic.orders
+    worker-b: Consumer.workerB.VirtualTopic.orders
 
 management:
   endpoints:
