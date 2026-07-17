@@ -1,0 +1,18 @@
+ ___      _    _ _    _
+| _ \_  _| |__| (_)__| |_  ___ _ _
+|  _/ || | '_ \ | (_-< ' \/ -_) '_|
+|_|  \_,_|_.__/_|_/__/_||_\___|_|
+
+ActiveMQ-Publisher
+
+:: Project Metadata ::
+- Project Name      : activemq-publisher
+- Description       : REST API — POST /v1/messages publishes to orders.queue via JmsTemplate
+- Group Id          : com.learnactivemq
+- Artifact Id       : activemq-publisher
+- Project Version   : 0.0.1-SNAPSHOT
+- Spring Boot       : ${spring-boot.version}
+- Java Version      : ${java.version}
+- Port              : 8080
+- Broker            : ${spring.activemq.broker-url:tcp://localhost:61616}
+- Queue             : ${app.queue:orders.queue}
