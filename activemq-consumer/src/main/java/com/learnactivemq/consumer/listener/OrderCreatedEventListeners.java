@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
-public class EventListeners {
+public class OrderCreatedEventListeners {
 
     @JmsListener(destination = "${app.topics.orders}")
     public void onOrderCreated(OrderCreatedEvent event,

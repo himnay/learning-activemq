@@ -52,11 +52,11 @@ All modules inherit from the root POM (shared: `spring-boot-starter-activemq`, a
 
 ## Events & serialization
 
-| Event                     | Topic              | Fields                                                     |
-|---------------------------|--------------------|------------------------------------------------------------|
-| `OrderCreatedEvent`       | `orders.topic`     | orderId, product, quantity, amount, createdAt              |
-| `PaymentReceivedEvent`    | `payments.topic`   | paymentId, orderId, amount, method, receivedAt             |
-| `ShipmentDispatchedEvent` | `shipments.topic`  | shipmentId, orderId, carrier, trackingNumber, dispatchedAt |
+| Event                     | Topic                | Fields                                                                          |
+|---------------------------|----------------------|---------------------------------------------------------------------------------|
+| `OrderCreatedEvent`       | `orders.topic`       | orderId, product, quantity, amount, createdAt                                   |
+| `PaymentReceivedEvent`    | `payments.topic`     | paymentId, orderId, amount, method, receivedAt                                  |
+| `ShipmentDispatchedEvent` | `shipments.topic`    | shipmentId, orderId, carrier, trackingNumber, dispatchedAt                      |
 | `OrderQuoteRequest/Reply` | `orders.quote.queue` | request-reply pair (see [pattern](#request-reply-jmsreplyto--jmscorrelationid)) |
 
 Serialization: `JacksonJsonMessageConverter` writes JSON text messages and sets an `_event` type-id header (`order-created`, `payment-received`, `shipment-dispatched`, …). The consumer maps that header back to its event class — both sides share the records via `activemq-common`, and the type-id (not the class name) travels on the wire.
@@ -64,6 +64,25 @@ Serialization: `JacksonJsonMessageConverter` writes JSON text messages and sets 
 Topics are pub/sub (`spring.jms.pub-sub-domain: true` on both sides): every live subscriber gets a copy, and listener concurrency stays at 1 — extra topic consumers would each receive a duplicate.
 
 Every listener also logs the JMS destination it consumed from (`from=topic://orders.topic`, `from=queue://Consumer.workerA.VirtualTopic.orders`) via the `jms_destination` header.
+
+### Message properties — the JMS version of Kafka producer headers
+
+`EventHeaderPostProcessor` (a `MessagePostProcessor`) runs after the converter builds the message and stamps metadata as **JMS properties**, keeping it out of the JSON body:
+
+```java
+jmsTemplate.convertAndSend(topic, event, new EventHeaderPostProcessor("order-created", messageId));
+```
+
+| Property             | Example              | Kafka analogue                  |
+|----------------------|----------------------|---------------------------------|
+| `messageId`          | uuid                 | header                          |
+| `eventType`          | `order-created`      | header                          |
+| `source`             | `activemq-publisher` | header                          |
+| `publishedAtEpochMs` | `1784352579427`      | record timestamp                |
+| `seq` (bulk only)    | `42`                 | header                          |
+| `_event`             | set by converter     | — (type id for deserialization) |
+
+Unlike Kafka headers, JMS properties are broker-visible: usable in consumer selectors (`selector = "eventType = 'order-created'"`) and shown when browsing queues in the web console. Consumers read them with `@Header("seq")` etc.
 
 ## Quick start
 
@@ -117,13 +136,13 @@ Event endpoints return `202 Accepted` with the same response shape:
 }
 ```
 
-| Endpoint                          | Request body                               | Notes                                                       |
-|-----------------------------------|--------------------------------------------|-------------------------------------------------------------|
-| `POST /v1/events/orders`          | `{"product", "quantity", "amount"}`        | product not blank, both numbers positive                    |
-| `POST /v1/events/payments`        | `{"orderId", "amount", "method"}`          | orderId/method not blank, amount positive                   |
-| `POST /v1/events/shipments`       | `{"orderId", "carrier", "trackingNumber"}` | all not blank                                               |
-| `POST /v1/events/orders/bulk?count=N` | same as orders                         | N seq-numbered events to the virtual topic (1–1000)         |
-| `POST /v1/orders/quote`           | same as orders                             | request-reply — returns `200 {approved, totalPrice, note}`  |
+| Endpoint                              | Request body                                | Notes                                                        |
+|---------------------------------------|---------------------------------------------|--------------------------------------------------------------|
+| `POST /v1/events/orders`              | `{"product", "quantity", "amount"}`         | product not blank, both numbers positive                     |
+| `POST /v1/events/payments`            | `{"orderId", "amount", "method"}`           | orderId/method not blank, amount positive                    |
+| `POST /v1/events/shipments`           | `{"orderId", "carrier", "trackingNumber"}`  | all not blank                                                |
+| `POST /v1/events/orders/bulk?count=N` | same as orders                              | N seq-numbered events to the virtual topic (1–1000)          |
+| `POST /v1/orders/quote`               | same as orders                              | request-reply — returns `200 {approved, totalPrice, note}`   |
 
 Invalid payloads get `400`. The server generates the entity id (`orderId`, `paymentId`, `shipmentId`) and timestamp.
 
@@ -131,14 +150,14 @@ Invalid payloads get `400`. The server generates the entity id (`orderId`, `paym
 
 The mental model behind every pattern below:
 
-| Aspect                | Queue (point-to-point)                          | Topic (pub/sub)                                     |
-|-----------------------|-------------------------------------------------|-----------------------------------------------------|
-| Delivery              | Each message goes to exactly **one** consumer   | Each message goes to **every** active subscriber    |
-| Multiple consumers    | Compete — broker round-robins between them      | Duplicate — each one gets its own copy              |
-| Offline consumer      | Messages wait in the queue (retained)           | Message lost unless subscriber is durable           |
-| Browsing (console/GUI)| Yes — pending messages + bodies visible         | No — only enqueue/dequeue counters                  |
-| Typical use           | Work distribution, task processing              | Event broadcast, notifications                      |
-| Spring switch         | `spring.jms.pub-sub-domain: false` (default)    | `spring.jms.pub-sub-domain: true`                   |
+| Aspect                 | Queue (point-to-point)                           | Topic (pub/sub)                                      |
+|------------------------|--------------------------------------------------|------------------------------------------------------|
+| Delivery               | Each message goes to exactly **one** consumer    | Each message goes to **every** active subscriber     |
+| Multiple consumers     | Compete — broker round-robins between them       | Duplicate — each one gets its own copy               |
+| Offline consumer       | Messages wait in the queue (retained)            | Message lost unless subscriber is durable            |
+| Browsing (console/GUI) | Yes — pending messages + bodies visible          | No — only enqueue/dequeue counters                   |
+| Typical use            | Work distribution, task processing               | Event broadcast, notifications                       |
+| Spring switch          | `spring.jms.pub-sub-domain: false` (default)     | `spring.jms.pub-sub-domain: true`                    |
 
 **Virtual topics** combine both: publish once to a topic, consume from queues. The broker watches the naming convention — any queue named `Consumer.<group>.VirtualTopic.<name>` automatically receives a **copy** of every message published to topic `VirtualTopic.<name>`. No broker config needed, just the names.
 
@@ -148,13 +167,13 @@ The mental model behind every pattern below:
 
 What this project runs:
 
-| Kind          | Destination                                            | Consumers                             |
-|---------------|--------------------------------------------------------|---------------------------------------|
-| Plain topic   | `orders.topic`, `payments.topic`, `shipments.topic`    | 1 topic listener each (+1 durable on shipments) |
-| Virtual topic | `VirtualTopic.orders` (publish side only)              | — (broker copies into queues below)   |
-| Queue         | `Consumer.workerA.VirtualTopic.orders`                 | 3 competing consumers (round-robin)   |
-| Queue         | `Consumer.workerB.VirtualTopic.orders`                 | 3 competing consumers (round-robin)   |
-| Queue         | `orders.quote.queue`                                   | 1 quote responder (request-reply)     |
+| Kind           | Destination                                             | Consumers                                       |
+|----------------|---------------------------------------------------------|-------------------------------------------------|
+| Plain topic    | `orders.topic`, `payments.topic`, `shipments.topic`     | 1 topic listener each (+1 durable on shipments) |
+| Virtual topic  | `VirtualTopic.orders` (publish side only)               | — (broker copies into queues below)             |
+| Queue          | `Consumer.workerA.VirtualTopic.orders`                  | 3 competing consumers (round-robin)             |
+| Queue          | `Consumer.workerB.VirtualTopic.orders`                  | 3 competing consumers (round-robin)             |
+| Queue          | `orders.quote.queue`                                    | 1 quote responder (request-reply)               |
 
 So one bulk message is copied **twice** (once per worker queue), and inside each queue exactly one of the 3 consumers receives it. 100 published → 100 in workerA + 100 in workerB → ~33/33/34 per consumer thread.
 
@@ -342,13 +361,13 @@ flowchart LR
 
 Two products share the name:
 
-| | ActiveMQ **Classic** (this project) | ActiveMQ **Artemis** |
-|---|---|---|
-| Lineage | Original codebase (2004+) | HornetQ donation, next-gen |
-| Threading | Thread-per-connection oriented | Reactor / async core |
-| Persistence | KahaDB journal | Own append-only journal |
-| Protocols | OpenWire native; STOMP, AMQP, MQTT, WS | Same set, AMQP first-class |
-| Future | Maintenance + steady releases | Where new features land |
+|             | ActiveMQ **Classic** (this project)    | ActiveMQ **Artemis**       |
+|-------------|----------------------------------------|----------------------------|
+| Lineage     | Original codebase (2004+)              | HornetQ donation, next-gen |
+| Threading   | Thread-per-connection oriented         | Reactor / async core       |
+| Persistence | KahaDB journal                         | Own append-only journal    |
+| Protocols   | OpenWire native; STOMP, AMQP, MQTT, WS | Same set, AMQP first-class |
+| Future      | Maintenance + steady releases          | Where new features land    |
 
 ActiveMQ implements **JMS** (Jakarta Messaging) — the Java standard API for messaging — so application code depends on `jakarta.jms.*` interfaces, not on ActiveMQ classes. Swap the broker, keep the code.
 
@@ -521,12 +540,12 @@ sequenceDiagram
 
 A message is only *gone* from the broker when acknowledged. Who acks, and when, defines your delivery guarantee:
 
-| Mode | Who acks | Guarantee | Notes |
-|---|---|---|---|
-| `AUTO_ACKNOWLEDGE` | Provider, after listener returns | At-least-once | Spring's default; redelivered if listener throws |
-| `CLIENT_ACKNOWLEDGE` | Your code (`message.acknowledge()`) | At-least-once | Acks *all* messages consumed so far in the session |
-| `DUPS_OK_ACKNOWLEDGE` | Provider, lazily in batches | At-least-once, dups likely | Fastest, use when idempotent |
-| Transacted session | `session.commit()` | All-or-nothing batch | Rollback ⇒ everything redelivered |
+| Mode                  | Who acks                            | Guarantee                  | Notes                                              |
+|-----------------------|-------------------------------------|----------------------------|----------------------------------------------------|
+| `AUTO_ACKNOWLEDGE`    | Provider, after listener returns    | At-least-once              | Spring's default; redelivered if listener throws   |
+| `CLIENT_ACKNOWLEDGE`  | Your code (`message.acknowledge()`) | At-least-once              | Acks *all* messages consumed so far in the session |
+| `DUPS_OK_ACKNOWLEDGE` | Provider, lazily in batches         | At-least-once, dups likely | Fastest, use when idempotent                       |
+| Transacted session    | `session.commit()`                  | All-or-nothing batch       | Rollback ⇒ everything redelivered                  |
 
 ```mermaid
 flowchart TB
@@ -612,11 +631,11 @@ How it works — **pure naming convention, zero broker config**:
 
 What each layer gives you:
 
-| Layer | Semantics | Kafka analogy |
-|---|---|---|
-| `VirtualTopic.orders` | fan-out to all groups | the topic |
-| `Consumer.workerA.*` queue | group gets every message | consumer group A |
-| 3 consumers on that queue | round-robin work sharing | partitions consumed within group |
+| Layer                      | Semantics                | Kafka analogy                    |
+|----------------------------|--------------------------|----------------------------------|
+| `VirtualTopic.orders`      | fan-out to all groups    | the topic                        |
+| `Consumer.workerA.*` queue | group gets every message | consumer group A                 |
+| 3 consumers on that queue  | round-robin work sharing | partitions consumed within group |
 
 Gotchas:
 
@@ -717,11 +736,11 @@ Per-order strict ordering **and** horizontal scaling — same idea as Kafka part
 
 Broker-side timer (enable with `schedulerSupport="true"`). Producer stamps delay properties; broker holds the message and enqueues at the right moment.
 
-| Property | Meaning |
-|---|---|
-| `AMQ_SCHEDULED_DELAY` | deliver after N ms |
+| Property                                        | Meaning                         |
+|-------------------------------------------------|---------------------------------|
+| `AMQ_SCHEDULED_DELAY`                           | deliver after N ms              |
 | `AMQ_SCHEDULED_PERIOD` + `AMQ_SCHEDULED_REPEAT` | redeliver every period, N times |
-| `AMQ_SCHEDULED_CRON` | cron expression |
+| `AMQ_SCHEDULED_CRON`                            | cron expression                 |
 
 ```mermaid
 sequenceDiagram
@@ -829,13 +848,13 @@ flowchart TB
 
 **JMX** — every destination and connection is an MBean (`jconsole` → `org.apache.activemq` domain). The numbers that matter:
 
-| Metric | Smell when… |
-|---|---|
-| `QueueSize` | grows steadily → consumers dead or too slow |
-| `ConsumerCount` | 0 on a queue that should have workers |
-| `EnqueueCount` vs `DequeueCount` | diverging → backlog forming |
-| `MemoryPercentUsage` | near 100 → producer flow control imminent |
-| `ExpiredCount` | messages dying of TTL unnoticed |
+| Metric                           | Smell when…                                 |
+|----------------------------------|---------------------------------------------|
+| `QueueSize`                      | grows steadily → consumers dead or too slow |
+| `ConsumerCount`                  | 0 on a queue that should have workers       |
+| `EnqueueCount` vs `DequeueCount` | diverging → backlog forming                 |
+| `MemoryPercentUsage`             | near 100 → producer flow control imminent   |
+| `ExpiredCount`                   | messages dying of TTL unnoticed             |
 
 **Advisory topics** — the broker narrates its own life on `ActiveMQ.Advisory.*` topics: consumer started/stopped, queue created, message DLQ'd, slow consumer detected. Subscribe like any topic — free building block for ops tooling.
 
@@ -849,18 +868,18 @@ flowchart LR
 
 ## 19. ActiveMQ vs Kafka vs RabbitMQ
 
-| | ActiveMQ Classic | Kafka | RabbitMQ |
-|---|---|---|---|
-| Model | JMS broker (queues + topics) | Distributed **log** (partitions, offsets) | AMQP broker (exchanges → queues) |
-| Message after consume | Deleted on ack | **Retained** (retention window); consumers track offsets | Deleted on ack |
-| Replay old messages | No (gone once acked) | Yes — rewind offset | No |
-| Fan-out + work sharing | Virtual topics | Consumer groups (native) | Exchange bound to N queues |
-| Ordering | Per queue; message groups for keyed order | Per partition (key → partition) | Per queue |
-| Throughput ceiling | Tens of thousands msg/s | Millions msg/s (sequential log, zero-copy) | Hundreds of thousands |
-| Latency | Low (push) | Low-ish (batched pull) | Low (push) |
-| Protocol | OpenWire/JMS + AMQP/STOMP/MQTT | Custom binary | AMQP 0-9-1 |
-| Delayed/scheduled msgs | Built-in scheduler | Not built-in | Plugin / TTL+DLX tricks |
-| Best fit | JMS shops, task queues, req/reply | Event streaming, replay, big pipelines | Complex routing, multi-protocol |
+|                        | ActiveMQ Classic                          | Kafka                                                    | RabbitMQ                         |
+|------------------------|-------------------------------------------|----------------------------------------------------------|----------------------------------|
+| Model                  | JMS broker (queues + topics)              | Distributed **log** (partitions, offsets)                | AMQP broker (exchanges → queues) |
+| Message after consume  | Deleted on ack                            | **Retained** (retention window); consumers track offsets | Deleted on ack                   |
+| Replay old messages    | No (gone once acked)                      | Yes — rewind offset                                      | No                               |
+| Fan-out + work sharing | Virtual topics                            | Consumer groups (native)                                 | Exchange bound to N queues       |
+| Ordering               | Per queue; message groups for keyed order | Per partition (key → partition)                          | Per queue                        |
+| Throughput ceiling     | Tens of thousands msg/s                   | Millions msg/s (sequential log, zero-copy)               | Hundreds of thousands            |
+| Latency                | Low (push)                                | Low-ish (batched pull)                                   | Low (push)                       |
+| Protocol               | OpenWire/JMS + AMQP/STOMP/MQTT            | Custom binary                                            | AMQP 0-9-1                       |
+| Delayed/scheduled msgs | Built-in scheduler                        | Not built-in                                             | Plugin / TTL+DLX tricks          |
+| Best fit               | JMS shops, task queues, req/reply         | Event streaming, replay, big pipelines                   | Complex routing, multi-protocol  |
 
 The virtual-topic pattern in this repo is ActiveMQ speaking Kafka's dialect: `VirtualTopic.orders` ≈ Kafka topic, group queue ≈ consumer group, competing consumers ≈ partition consumption — minus replay, because queues delete on ack.
 
@@ -868,17 +887,17 @@ The virtual-topic pattern in this repo is ActiveMQ speaking Kafka's dialect: `Vi
 
 ## 20. How this project maps to all of the above
 
-| Concept (section) | Where it lives in this repo |
-|---|---|
-| Plain topics (§4) | `orders.topic`, `payments.topic`, `shipments.topic`; `EventListeners` |
-| Typed messages, properties (§5) | `_event` type id, `messageId`, `seq` properties; JSON `TextMessage` |
-| Push + prefetch (§6) | defaults; visible in even 34/33/33 spread |
-| Auto-ack / redelivery (§7) | Spring default `AUTO_ACKNOWLEDGE`; throw in a listener to watch redelivery → `ActiveMQ.DLQ` |
-| Competing consumers (§8) | `queueListenerFactory` concurrency 3-3 |
-| Virtual topics (§10) | `VirtualTopic.orders` → `Consumer.workerA/workerB.VirtualTopic.orders`; bulk endpoint |
-| KahaDB (§11) | `activemq-data` docker volume |
-| Console (§18) | compose port 8161; worker queues browsable |
-| Spring wiring (§17) | `JmsEventConverterConfig` (common), `QueueListenerConfig` (consumer), `EventPublisherService` (publisher) |
+| Concept (section)               | Where it lives in this repo                                                                               |
+|---------------------------------|-----------------------------------------------------------------------------------------------------------|
+| Plain topics (§4)               | `orders.topic`, `payments.topic`, `shipments.topic`; `OrderCreatedEventListeners`                         |
+| Typed messages, properties (§5) | `_event` type id, `messageId`, `seq` properties; JSON `TextMessage`                                       |
+| Push + prefetch (§6)            | defaults; visible in even 34/33/33 spread                                                                 |
+| Auto-ack / redelivery (§7)      | Spring default `AUTO_ACKNOWLEDGE`; throw in a listener to watch redelivery → `ActiveMQ.DLQ`               |
+| Competing consumers (§8)        | `queueListenerFactory` concurrency 3-3                                                                    |
+| Virtual topics (§10)            | `VirtualTopic.orders` → `Consumer.workerA/workerB.VirtualTopic.orders`; bulk endpoint                     |
+| KahaDB (§11)                    | `activemq-data` docker volume                                                                             |
+| Console (§18)                   | compose port 8161; worker queues browsable                                                                |
+| Spring wiring (§17)             | `JmsEventConverterConfig` (common), `QueueListenerConfig` (consumer), `EventPublisherService` (publisher) |
 
 Experiments to try next, ordered by effort:
 

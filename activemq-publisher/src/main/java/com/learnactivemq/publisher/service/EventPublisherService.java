@@ -8,6 +8,7 @@ import com.learnactivemq.publisher.dto.OrderRequest;
 import com.learnactivemq.publisher.dto.PaymentRequest;
 import com.learnactivemq.publisher.dto.PublishResponse;
 import com.learnactivemq.publisher.dto.ShipmentRequest;
+import com.learnactivemq.publisher.jms.EventHeaderPostProcessor;
 import java.time.Instant;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
@@ -64,11 +65,8 @@ public class EventPublisherService {
             OrderCreatedEvent event = new OrderCreatedEvent(
                     UUID.randomUUID().toString(), request.product(), request.quantity(),
                     request.amount(), Instant.now());
-            jmsTemplate.convertAndSend(virtualOrdersTopic, event, message -> {
-                message.setStringProperty("messageId", UUID.randomUUID().toString());
-                message.setIntProperty("seq", seq);
-                return message;
-            });
+            jmsTemplate.convertAndSend(virtualOrdersTopic, event,
+                    new EventHeaderPostProcessor("order-created", UUID.randomUUID().toString(), seq));
         }
         log.info("Published burst of {} order-created events to topic={}", count, virtualOrdersTopic);
         return new BulkPublishResponse(count, virtualOrdersTopic, Instant.now());
@@ -76,10 +74,7 @@ public class EventPublisherService {
 
     private PublishResponse publish(String topic, String eventType, Object event) {
         String messageId = UUID.randomUUID().toString();
-        jmsTemplate.convertAndSend(topic, event, message -> {
-            message.setStringProperty("messageId", messageId);
-            return message;
-        });
+        jmsTemplate.convertAndSend(topic, event, new EventHeaderPostProcessor(eventType, messageId));
         log.info("Published {} id={} to topic={}", eventType, messageId, topic);
         return new PublishResponse(messageId, eventType, topic, Instant.now());
     }
