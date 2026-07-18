@@ -1,6 +1,6 @@
 # learning-activemq
 
-Spring Boot + ActiveMQ Classic learning project — event-driven style. A REST API publishes three typed event classes to three JMS topics; a standalone consumer subscribes with one `@JmsListener` per topic. Events travel as JSON (Jackson message converter with type-id mappings) and the shared event records live in a common module.
+Spring Boot + ActiveMQ Classic learning project — event-driven style. A REST API publishes three typed event classes to three JMS topics; a standalone consumer subscribes with one `@JmsListener` per topic. Events travel as JSON (Jackson message converter with type-id mappings) and the shared event records live in a common module. On top of that base flow the project demonstrates the classic messaging patterns: virtual-topic round-robin, request-reply, durable subscriptions, and redelivery with per-queue DLQs.
 
 ## Architecture
 
@@ -15,37 +15,121 @@ flowchart LR
     t3 -->|"@JmsListener"| con
 ```
 
-> Deep dive: [ActiveMQ Deep Dive](#activemq-deep-dive) at the bottom of this file — 20 illustrated sections on broker internals, queues vs topics, prefetch, acks, DLQ, KahaDB, virtual topics, HA, Spring wiring, and ActiveMQ vs Kafka vs RabbitMQ.
-
 ## Types 
 
 ![messaging-broker-types.png](images/messaging-broker-types.png)
+
+## Table of Contents
+
+**Part 1 — The Project**
+
+1. 📦 [Modules](#modules)
+2. ✉️ [Events & serialization](#events--serialization)
+3. 🚀 [Quick start](#quick-start)
+4. 🌐 [API](#api)
+5. 🧠 [Topics vs Queues](#topics-vs-queues-in-activemq)
+6. 🔁 [Pattern: round-robin over a virtual topic](#round-robin-demo-virtual-topic)
+7. 🤝 [Pattern: request-reply](#request-reply-jmsreplyto--jmscorrelationid)
+8. 📌 [Pattern: durable topic subscription](#durable-topic-subscription)
+9. ☠️ [Pattern: redelivery + per-queue DLQ](#redelivery--per-queue-dlq)
+10. 🖥️ [The broker: console & config](#activemq-broker)
+11. ⚙️ [Configuration](#configuration)
+12. 🤝 [Insomnia](#insomnia) · 📊 [Observability](#observability)
+
+**Part 2 — [ActiveMQ Deep Dive](#activemq-deep-dive)** — 20 illustrated reference sections: broker internals, queues vs topics, prefetch, acks, DLQ, KahaDB, virtual topics, HA, Spring wiring, ActiveMQ vs Kafka vs RabbitMQ.
+
+---
 
 ## Modules
 
 | Module                | Port | What it does                                                                                    |
 |-----------------------|------|-------------------------------------------------------------------------------------------------|
-| `activemq-common`     | —    | Shared library: the three event records + `JmsEventConverterConfig` (JSON converter)            |
+| `activemq-common`     | —    | Shared library: the event records + `JmsEventConverterConfig` (JSON converter)                  |
 | `activemq-publisher`  | 8080 | REST API (`POST /v1/events/*`) → builds an event, publishes it to its topic, stamps `messageId` |
-| `activemq-consumer`   | 8081 | Three `@JmsListener`s (one per topic) — deserialize the typed event and log it                  |
+| `activemq-consumer`   | 8081 | `@JmsListener`s — topic listeners, virtual-topic workers, quote responder                       |
 
 All modules inherit from the root POM (shared: `spring-boot-starter-activemq`, actuator, Lombok, test) which inherits from `super-pom` (Spring Boot parent, Java toolchain, BOM).
 
-## Events
+## Events & serialization
 
 | Event                     | Topic              | Fields                                                     |
 |---------------------------|--------------------|------------------------------------------------------------|
 | `OrderCreatedEvent`       | `orders.topic`     | orderId, product, quantity, amount, createdAt              |
 | `PaymentReceivedEvent`    | `payments.topic`   | paymentId, orderId, amount, method, receivedAt             |
 | `ShipmentDispatchedEvent` | `shipments.topic`  | shipmentId, orderId, carrier, trackingNumber, dispatchedAt |
+| `OrderQuoteRequest/Reply` | `orders.quote.queue` | request-reply pair (see [pattern](#request-reply-jmsreplyto--jmscorrelationid)) |
 
-Serialization: `JacksonJsonMessageConverter` writes JSON text messages and sets an `_event` type-id header (`order-created`, `payment-received`, `shipment-dispatched`). The consumer maps that header back to its event class — both sides share the records via `activemq-common`, and the type-id (not the class name) travels on the wire.
+Serialization: `JacksonJsonMessageConverter` writes JSON text messages and sets an `_event` type-id header (`order-created`, `payment-received`, `shipment-dispatched`, …). The consumer maps that header back to its event class — both sides share the records via `activemq-common`, and the type-id (not the class name) travels on the wire.
 
 Topics are pub/sub (`spring.jms.pub-sub-domain: true` on both sides): every live subscriber gets a copy, and listener concurrency stays at 1 — extra topic consumers would each receive a duplicate.
 
 Every listener also logs the JMS destination it consumed from (`from=topic://orders.topic`, `from=queue://Consumer.workerA.VirtualTopic.orders`) via the `jms_destination` header.
 
+## Quick start
+
+Prerequisites: Java 25, Maven, Docker (for the ActiveMQ broker).
+
+```bash
+# 1. Start ActiveMQ
+docker compose up -d
+
+# 2. Build everything
+mvn clean install
+
+# 3. Start consumer (terminal 1)
+mvn -pl activemq-consumer spring-boot:run
+
+# 4. Start publisher (terminal 2)
+mvn -pl activemq-publisher spring-boot:run
+
+# 5. Publish events
+curl -X POST http://localhost:8080/v1/events/orders \
+  -H "Content-Type: application/json" \
+  -d '{"product": "Laptop", "quantity": 2, "amount": 2499.98}'
+
+curl -X POST http://localhost:8080/v1/events/payments \
+  -H "Content-Type: application/json" \
+  -d '{"orderId": "<orderId from above>", "amount": 2499.98, "method": "CARD"}'
+
+curl -X POST http://localhost:8080/v1/events/shipments \
+  -H "Content-Type: application/json" \
+  -d '{"orderId": "<orderId>", "carrier": "DHL", "trackingNumber": "DHL-123456"}'
+```
+
+Consumer log shows one line per event:
+
+```
+Consumed order-created from=topic://orders.topic id=<uuid> orderId=<uuid> product=Laptop qty=2 amount=2499.98
+Consumed payment-received from=topic://payments.topic id=<uuid> paymentId=<uuid> orderId=<...> amount=2499.98 method=CARD
+Consumed shipment-dispatched from=topic://shipments.topic id=<uuid> shipmentId=<uuid> orderId=<...> carrier=DHL tracking=DHL-123456
+```
+
+## API
+
+Event endpoints return `202 Accepted` with the same response shape:
+
+```json
+{
+  "messageId": "1c1f9d2e-…",
+  "eventType": "order-created",
+  "topic": "orders.topic",
+  "publishedAt": "2026-07-17T19:00:00Z"
+}
+```
+
+| Endpoint                          | Request body                               | Notes                                                       |
+|-----------------------------------|--------------------------------------------|-------------------------------------------------------------|
+| `POST /v1/events/orders`          | `{"product", "quantity", "amount"}`        | product not blank, both numbers positive                    |
+| `POST /v1/events/payments`        | `{"orderId", "amount", "method"}`          | orderId/method not blank, amount positive                   |
+| `POST /v1/events/shipments`       | `{"orderId", "carrier", "trackingNumber"}` | all not blank                                               |
+| `POST /v1/events/orders/bulk?count=N` | same as orders                         | N seq-numbered events to the virtual topic (1–1000)         |
+| `POST /v1/orders/quote`           | same as orders                             | request-reply — returns `200 {approved, totalPrice, note}`  |
+
+Invalid payloads get `400`. The server generates the entity id (`orderId`, `paymentId`, `shipmentId`) and timestamp.
+
 ## Topics vs Queues in ActiveMQ
+
+The mental model behind every pattern below:
 
 | Aspect                | Queue (point-to-point)                          | Topic (pub/sub)                                     |
 |-----------------------|-------------------------------------------------|-----------------------------------------------------|
@@ -66,10 +150,11 @@ What this project runs:
 
 | Kind          | Destination                                            | Consumers                             |
 |---------------|--------------------------------------------------------|---------------------------------------|
-| Plain topic   | `orders.topic`, `payments.topic`, `shipments.topic`    | 1 topic listener each                 |
+| Plain topic   | `orders.topic`, `payments.topic`, `shipments.topic`    | 1 topic listener each (+1 durable on shipments) |
 | Virtual topic | `VirtualTopic.orders` (publish side only)              | — (broker copies into queues below)   |
 | Queue         | `Consumer.workerA.VirtualTopic.orders`                 | 3 competing consumers (round-robin)   |
 | Queue         | `Consumer.workerB.VirtualTopic.orders`                 | 3 competing consumers (round-robin)   |
+| Queue         | `orders.quote.queue`                                   | 1 quote responder (request-reply)     |
 
 So one bulk message is copied **twice** (once per worker queue), and inside each queue exactly one of the 3 consumers receives it. 100 published → 100 in workerA + 100 in workerB → ~33/33/34 per consumer thread.
 
@@ -83,7 +168,7 @@ publisher ──▶ VirtualTopic.orders ──▶ Consumer.workerA.VirtualTopic.
 ```
 
 - **Fan-out across queues**: workerA and workerB each receive all 100 (copies).
-- **Round-robin within a queue**: the 3 consumers (`queueListenerFactory`, concurrency 3) alternate — watch `seq=1/2/3/4…` land on threads `#-1/#-2/#-3/#-1…` in the consumer log.
+- **Round-robin within a queue**: the 3 consumers (`queueListenerFactory`; concurrency from `app.listener.worker-concurrency`) alternate — watch `seq=1/2/3/4…` land on threads `#-1/#-2/#-3/#-1…` in the consumer log.
 - Virtual-topic queues are real queues — browsable in the web console under **Queues**, unlike plain topics.
 
 ```bash
@@ -172,70 +257,7 @@ curl -X POST 'http://localhost:8080/v1/events/orders/bulk?count=10' \
 
 Verified run: 4 `SIMULATED FAILURE seq=10` warnings with exact 0.5s/1s/2s gaps, then `DLQ.Consumer.workerA.VirtualTopic.orders` size 1; workerB's copy processed normally.
 
-## Prerequisites
-
-- Java 25, Maven
-- Docker (for the ActiveMQ broker)
-
-## Run it
-
-```bash
-# 1. Start ActiveMQ
-docker compose up -d
-
-# 2. Build everything
-mvn clean install
-
-# 3. Start consumer (terminal 1)
-mvn -pl activemq-consumer spring-boot:run
-
-# 4. Start publisher (terminal 2)
-mvn -pl activemq-publisher spring-boot:run
-
-# 5. Publish events
-curl -X POST http://localhost:8080/v1/events/orders \
-  -H "Content-Type: application/json" \
-  -d '{"product": "Laptop", "quantity": 2, "amount": 2499.98}'
-
-curl -X POST http://localhost:8080/v1/events/payments \
-  -H "Content-Type: application/json" \
-  -d '{"orderId": "<orderId from above>", "amount": 2499.98, "method": "CARD"}'
-
-curl -X POST http://localhost:8080/v1/events/shipments \
-  -H "Content-Type: application/json" \
-  -d '{"orderId": "<orderId>", "carrier": "DHL", "trackingNumber": "DHL-123456"}'
-```
-
-Consumer log shows one line per event:
-
-```
-Consumed order-created id=<uuid> orderId=<uuid> product=Laptop qty=2 amount=2499.98
-Consumed payment-received id=<uuid> paymentId=<uuid> orderId=<...> amount=2499.98 method=CARD
-Consumed shipment-dispatched id=<uuid> shipmentId=<uuid> orderId=<...> carrier=DHL tracking=DHL-123456
-```
-
-## API
-
-All endpoints return `202 Accepted` with the same response shape:
-
-```json
-{
-  "messageId": "1c1f9d2e-…",
-  "eventType": "order-created",
-  "topic": "orders.topic",
-  "publishedAt": "2026-07-17T19:00:00Z"
-}
-```
-
-| Endpoint                    | Request body                                            | Validation                                |
-|-----------------------------|---------------------------------------------------------|-------------------------------------------|
-| `POST /v1/events/orders`    | `{"product", "quantity", "amount"}`                     | product not blank, both positive          |
-| `POST /v1/events/payments`  | `{"orderId", "amount", "method"}`                       | orderId/method not blank, amount positive |
-| `POST /v1/events/shipments` | `{"orderId", "carrier", "trackingNumber"}`              | all not blank                             |
-
-Invalid payloads get `400`. The server generates the entity id (`orderId`, `paymentId`, `shipmentId`) and timestamp.
-
-## ActiveMQ
+## ActiveMQ broker
 
 | Thing                 | Value                                               |
 |-----------------------|-----------------------------------------------------|
@@ -243,10 +265,11 @@ Invalid payloads get `400`. The server generates the entity id (`orderId`, `paym
 | Web console           | <http://localhost:8161> — `admin` / `admin`         |
 | Topics                | `orders.topic`, `payments.topic`, `shipments.topic` |
 | Image                 | `apache/activemq-classic:6.1.7`                     |
+| Broker config         | `broker/activemq.xml` (per-queue DLQ strategy)      |
 
 ![messaging-broker-gui.png](images/messaging-broker-gui.png)
 
-Watch the topics in the console under **Topics** — enqueued/dequeued counters move as you publish. Start the consumer first: topic messages are not retained for subscribers that aren't connected.
+Watch the topics in the console under **Topics** — enqueued/dequeued counters move as you publish. Start the consumer first: topic messages are not retained for subscribers that aren't connected. Queues (worker, quote, DLQ) are browsable under **Queues**, message bodies included.
 
 ## Configuration
 
@@ -257,11 +280,11 @@ Overridable via env vars (12-factor style):
 | `ACTIVEMQ_BROKER_URL`                 | `tcp://localhost:61616` | both    |
 | `ACTIVEMQ_USER` / `ACTIVEMQ_PASSWORD` | `admin` / `admin`       | both    |
 
-Topic names live under `app.topics.*` in each module's `application.yml`.
+Destination names live under `app.topics.*` / `app.queues.*`, worker concurrency under `app.listener.worker-concurrency`, and the DLQ demo switch under `app.listener.fail-seq-multiple` — all in each module's `application.yml`.
 
 ## Insomnia
 
-Import `insomnia-collection.json` — one request per event type + health checks for both modules.
+Import `insomnia-collection.json` — one request per event type, the bulk burst, the quote request-reply, plus health checks for both modules.
 
 ## Observability
 
@@ -271,7 +294,7 @@ Actuator on both modules: `/actuator/health`, `/actuator/metrics`, `/actuator/pr
 
 # ActiveMQ Deep Dive
 
-Companion doc to the project README — everything you need to reason about ActiveMQ Classic, with diagrams. Each section stands alone; skim the diagrams first, read the prose when needed.
+Reference half of this README — everything you need to reason about ActiveMQ Classic, with diagrams. Each section stands alone; skim the diagrams first, read the prose when needed.
 
 ---
 
@@ -330,7 +353,6 @@ Two products share the name:
 ActiveMQ implements **JMS** (Jakarta Messaging) — the Java standard API for messaging — so application code depends on `jakarta.jms.*` interfaces, not on ActiveMQ classes. Swap the broker, keep the code.
 
 ---
-
 ## 2. Broker architecture
 
 ```mermaid
