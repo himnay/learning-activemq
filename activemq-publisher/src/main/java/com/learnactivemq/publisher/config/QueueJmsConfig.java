@@ -28,6 +28,10 @@ public class QueueJmsConfig {
         JmsTemplate template = new JmsTemplate(connectionFactory);
         template.setMessageConverter(messageConverter);
         template.setPubSubDomain(true);
+        // PERSISTENT delivery: broker writes each message to KahaDB before
+        // acking the send — queued messages survive a broker restart
+        template.setExplicitQosEnabled(true);
+        template.setDeliveryPersistent(true);
         return template;
     }
 
@@ -39,6 +43,8 @@ public class QueueJmsConfig {
         template.setMessageConverter(messageConverter);
         template.setPubSubDomain(false);
         template.setReceiveTimeout(5000);   // give up if no responder answers in 5s
+        template.setExplicitQosEnabled(true);
+        template.setDeliveryPersistent(true);
         return template;
     }
 }

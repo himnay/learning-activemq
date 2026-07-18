@@ -240,6 +240,24 @@ Implementation note: a `clientId` must be set before the connection starts, whic
 
 Try it: stop the consumer → `POST /v1/events/orders` a few times → start the consumer → watch `DURABLE consumed ...` catch-up lines; the plain listener stays silent.
 
+## Message persistence
+
+Queued messages survive a broker restart — two halves make that true:
+
+- **Producer side** — both `JmsTemplate`s send with `DeliveryMode.PERSISTENT` (`setExplicitQosEnabled(true)` + `setDeliveryPersistent(true)` in `QueueJmsConfig`): the broker writes each message to its KahaDB journal *before* acknowledging the send.
+- **Broker side** — docker-compose mounts the `activemq-data` volume over `/opt/apache-activemq/data`, which holds KahaDB. `docker restart` (or a crash) keeps the journal.
+
+```mermaid
+flowchart LR
+    p[publisher] -->|"PERSISTENT send"| b((broker))
+    b -->|"write before ack"| k[("KahaDB<br/>activemq-data volume")]
+    b -. "restart / crash" .-> b2((broker back up))
+    k -->|"journal replayed"| b2
+    b2 --> c[consumer drains backlog]
+```
+
+Verified live: consumer stopped → 5 events published (5 pending in each worker queue) → `docker restart activemq` → queues still hold 5+5 → consumer started → all delivered, including the durable subscription's 5 stored copies. Note the scope: **queues and durable subscriptions** persist; plain topic subscribers still only get what's published while they're connected.
+
 ## Redelivery + per-queue DLQ
 
 What happens when a listener throws — demonstrated end-to-end:
