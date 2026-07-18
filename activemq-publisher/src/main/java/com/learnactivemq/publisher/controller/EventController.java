@@ -21,8 +21,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 @Validated
 @RestController
-@RequestMapping("/v1/events")
 @RequiredArgsConstructor
+@RequestMapping("/v1/events")
 public class EventController {
 
     private final EventPublisherService publisherService;
