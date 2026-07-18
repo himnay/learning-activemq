@@ -15,6 +15,8 @@ flowchart LR
     t3 -->|"@JmsListener"| con
 ```
 
+> Deep dive: [docs/activemq-deep-dive.md](docs/activemq-deep-dive.md) — 20 illustrated sections on broker internals, queues vs topics, prefetch, acks, DLQ, KahaDB, virtual topics, HA, Spring wiring, and ActiveMQ vs Kafka vs RabbitMQ.
+
 ## Types 
 
 ![messaging-broker-types.png](images/messaging-broker-types.png)
