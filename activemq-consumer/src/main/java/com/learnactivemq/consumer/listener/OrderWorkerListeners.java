@@ -18,7 +18,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class OrderWorkerListeners {
 
-    @JmsListener(destination = "${app.queues.worker-a}", containerFactory = "queueListenerFactory")
+    @JmsListener(destination = "${app.queues.worker-a}", containerFactory = "queueListenerFactory",
+            concurrency = "${app.listener.worker-concurrency}")
     public void onWorkerA(OrderCreatedEvent event,
                           @Header(name = "seq", required = false) Integer seq,
                           @Header(JmsHeaders.DESTINATION) Destination destination) {
@@ -26,7 +27,8 @@ public class OrderWorkerListeners {
                 destination, seq, event.orderId(), Thread.currentThread().getName());
     }
 
-    @JmsListener(destination = "${app.queues.worker-b}", containerFactory = "queueListenerFactory")
+    @JmsListener(destination = "${app.queues.worker-b}", containerFactory = "queueListenerFactory",
+            concurrency = "${app.listener.worker-concurrency}")
     public void onWorkerB(OrderCreatedEvent event,
                           @Header(name = "seq", required = false) Integer seq,
                           @Header(JmsHeaders.DESTINATION) Destination destination) {

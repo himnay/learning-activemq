@@ -12,6 +12,9 @@ server:
   port: 8081
 
 app:
+  listener:
+    # competing consumers per worker queue (min-max); round-robin happens across these
+    worker-concurrency: 3-3
   topics:
     orders: orders.topic
     payments: payments.topic

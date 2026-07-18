@@ -8,8 +8,8 @@ import org.springframework.jms.config.DefaultJmsListenerContainerFactory;
 
 /**
  * The default factory is topic-mode (spring.jms.pub-sub-domain: true). The
- * virtual-topic worker queues need a queue-mode factory with competing
- * consumers — that's where the broker round-robins messages.
+ * virtual-topic worker queues need a queue-mode factory — concurrency comes
+ * from each @JmsListener via app.listener.worker-concurrency in application.yml.
  */
 @Configuration
 public class QueueListenerConfig {
@@ -21,7 +21,6 @@ public class QueueListenerConfig {
         DefaultJmsListenerContainerFactory factory = new DefaultJmsListenerContainerFactory();
         configurer.configure(factory, connectionFactory);
         factory.setPubSubDomain(false);
-        factory.setConcurrency("3-3");
         return factory;
     }
 }

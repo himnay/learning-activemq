@@ -7,8 +7,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jms.annotation.EnableJms;
 
 @EnableJms
-@Import(JmsEventConverterConfig.class)
 @SpringBootApplication
+@Import(JmsEventConverterConfig.class)
 class ConsumerApplication {
 
     public static void main(String[] args) {
