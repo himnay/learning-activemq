@@ -15,4 +15,4 @@ ActiveMQ Publisher
 - Java Version      : ${java.version}
 - Port              : 8080
 - Broker            : ${spring.activemq.broker-url:tcp://localhost:61616}
-- Topics            : ${app.topics.orders:orders.topic}, ${app.topics.payments:payments.topic}, ${app.topics.shipments:shipments.topic}
+- Topic             : ${app.topics.virtual-orders:VirtualTopic.orders}

@@ -19,9 +19,7 @@ app:
     # watch redeliveries (backoff) then the message land in DLQ.Consumer.workerA.VirtualTopic.orders
     fail-seq-multiple: 0
   topics:
-    orders: orders.topic
-    payments: payments.topic
-    shipments: shipments.topic
+    virtual-orders: VirtualTopic.orders   # plain + durable subscribers attach here directly
   queues:
     # virtual-topic worker queues — broker copies every VirtualTopic.orders message
     # into each queue; competing consumers inside a queue get them round-robin
@@ -29,9 +27,9 @@ app:
     worker-b: Consumer.workerB.VirtualTopic.orders
     quote: orders.quote.queue             # request-reply — reply goes to JMSReplyTo
   subscriptions:
-    # durable topic subscription — broker stores shipment events published while
+    # durable topic subscription — broker stores order events published while
     # this consumer is offline and replays them on reconnect (clientId + name)
-    shipments-durable: shipments-durable-sub
+    orders-durable: orders-durable-sub
 
 management:
   endpoints:

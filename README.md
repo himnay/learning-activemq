@@ -1,18 +1,18 @@
 # learning-activemq
 
-Spring Boot + ActiveMQ Classic learning project — event-driven style. A REST API publishes three typed event classes to three JMS topics; a standalone consumer subscribes with one `@JmsListener` per topic. Events travel as JSON (Jackson message converter with type-id mappings) and the shared event records live in a common module. On top of that base flow the project demonstrates the classic messaging patterns: virtual-topic round-robin, request-reply, durable subscriptions, and redelivery with per-queue DLQs.
+Spring Boot + ActiveMQ Classic learning project — event-driven style. A REST API publishes a typed `OrderCreatedEvent` as JSON (Jackson message converter with type-id mappings, shared records in a common module); a standalone consumer subscribes with `@JmsListener`s. Around that one event the project demonstrates the classic messaging patterns: plain pub/sub, virtual-topic round-robin, request-reply, durable subscriptions, and redelivery with per-queue DLQs.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    client[REST Client / Insomnia] -->|"POST /v1/events/*"| pub[activemq-publisher :8080]
-    pub -->|order-created| t1[(orders.topic)]
-    pub -->|payment-received| t2[(payments.topic)]
-    pub -->|shipment-dispatched| t3[(shipments.topic)]
-    t1 -->|"@JmsListener"| con[activemq-consumer :8081]
-    t2 -->|"@JmsListener"| con
-    t3 -->|"@JmsListener"| con
+    client[REST Client / Insomnia] -->|"POST /v1/events/orders/bulk"| pub[activemq-publisher :8080]
+    client -->|"POST /v1/orders/quote"| pub
+    pub -->|"order-created (seq 1..N)"| vt[(VirtualTopic.orders)]
+    pub <-->|request-reply| qq[[orders.quote.queue]]
+    vt -->|"plain + durable topic subscribers"| con[activemq-consumer :8081]
+    vt -->|"workerA / workerB queues (round-robin)"| con
+    qq <--> con
 ```
 
 ## Types 
@@ -52,18 +52,16 @@ All modules inherit from the root POM (shared: `spring-boot-starter-activemq`, a
 
 ## Events & serialization
 
-| Event                     | Topic                | Fields                                                                          |
-|---------------------------|----------------------|---------------------------------------------------------------------------------|
-| `OrderCreatedEvent`       | `orders.topic`       | orderId, product, quantity, amount, createdAt                                   |
-| `PaymentReceivedEvent`    | `payments.topic`     | paymentId, orderId, amount, method, receivedAt                                  |
-| `ShipmentDispatchedEvent` | `shipments.topic`    | shipmentId, orderId, carrier, trackingNumber, dispatchedAt                      |
-| `OrderQuoteRequest/Reply` | `orders.quote.queue` | request-reply pair (see [pattern](#request-reply-jmsreplyto--jmscorrelationid)) |
+| Event                     | Destination                            | Fields                                                                          |
+|---------------------------|----------------------------------------|---------------------------------------------------------------------------------|
+| `OrderCreatedEvent`       | `VirtualTopic.orders`                  | orderId, product, quantity, amount, createdAt                                   |
+| `OrderQuoteRequest/Reply` | `orders.quote.queue`                   | request-reply pair (see [pattern](#request-reply-jmsreplyto--jmscorrelationid)) |
 
-Serialization: `JacksonJsonMessageConverter` writes JSON text messages and sets an `_event` type-id header (`order-created`, `payment-received`, `shipment-dispatched`, …). The consumer maps that header back to its event class — both sides share the records via `activemq-common`, and the type-id (not the class name) travels on the wire.
+Serialization: `JacksonJsonMessageConverter` writes JSON text messages and sets an `_event` type-id header (`order-created`, `order-quote-request`, `order-quote-reply`). The consumer maps that header back to its event class — both sides share the records via `activemq-common`, and the type-id (not the class name) travels on the wire.
 
 Topics are pub/sub (`spring.jms.pub-sub-domain: true` on both sides): every live subscriber gets a copy, and listener concurrency stays at 1 — extra topic consumers would each receive a duplicate.
 
-Every listener also logs the JMS destination it consumed from (`from=topic://orders.topic`, `from=queue://Consumer.workerA.VirtualTopic.orders`) via the `jms_destination` header.
+Every listener also logs the JMS destination it consumed from (`from=topic://VirtualTopic.orders`, `from=queue://Consumer.workerA.VirtualTopic.orders`) via the `jms_destination` header.
 
 ### Message properties — the JMS version of Kafka producer headers
 
@@ -101,50 +99,39 @@ mvn -pl activemq-consumer spring-boot:run
 # 4. Start publisher (terminal 2)
 mvn -pl activemq-publisher spring-boot:run
 
-# 5. Publish events
-curl -X POST http://localhost:8080/v1/events/orders \
+# 5. Publish events (count=1 for a single event)
+curl -X POST 'http://localhost:8080/v1/events/orders/bulk?count=1' \
   -H "Content-Type: application/json" \
   -d '{"product": "Laptop", "quantity": 2, "amount": 2499.98}'
-
-curl -X POST http://localhost:8080/v1/events/payments \
-  -H "Content-Type: application/json" \
-  -d '{"orderId": "<orderId from above>", "amount": 2499.98, "method": "CARD"}'
-
-curl -X POST http://localhost:8080/v1/events/shipments \
-  -H "Content-Type: application/json" \
-  -d '{"orderId": "<orderId>", "carrier": "DHL", "trackingNumber": "DHL-123456"}'
 ```
 
-Consumer log shows one line per event:
+One published event fans out to every consumption pattern — consumer log:
 
 ```
-Consumed order-created from=topic://orders.topic id=<uuid> orderId=<uuid> product=Laptop qty=2 amount=2499.98
-Consumed payment-received from=topic://payments.topic id=<uuid> paymentId=<uuid> orderId=<...> amount=2499.98 method=CARD
-Consumed shipment-dispatched from=topic://shipments.topic id=<uuid> shipmentId=<uuid> orderId=<...> carrier=DHL tracking=DHL-123456
+Consumed order-created from=topic://VirtualTopic.orders id=<uuid> orderId=<uuid> product=Laptop qty=2 amount=2499.98
+DURABLE consumed order-created from=topic://VirtualTopic.orders id=<uuid> orderId=<uuid> product=Laptop qty=2
+workerA consumed from=queue://Consumer.workerA.VirtualTopic.orders seq=1 orderId=<uuid> thread=...
+workerB consumed from=queue://Consumer.workerB.VirtualTopic.orders seq=1 orderId=<uuid> thread=...
 ```
 
 ## API
 
-Event endpoints return `202 Accepted` with the same response shape:
+The publish endpoint returns `202 Accepted`:
 
 ```json
 {
-  "messageId": "1c1f9d2e-…",
-  "eventType": "order-created",
-  "topic": "orders.topic",
+  "count": 100,
+  "topic": "VirtualTopic.orders",
   "publishedAt": "2026-07-17T19:00:00Z"
 }
 ```
 
 | Endpoint                              | Request body                                | Notes                                                        |
 |---------------------------------------|---------------------------------------------|--------------------------------------------------------------|
-| `POST /v1/events/orders`              | `{"product", "quantity", "amount"}`         | product not blank, both numbers positive                     |
-| `POST /v1/events/payments`            | `{"orderId", "amount", "method"}`           | orderId/method not blank, amount positive                    |
-| `POST /v1/events/shipments`           | `{"orderId", "carrier", "trackingNumber"}`  | all not blank                                                |
-| `POST /v1/events/orders/bulk?count=N` | same as orders                              | N seq-numbered events to the virtual topic (1–1000)          |
-| `POST /v1/orders/quote`               | same as orders                              | request-reply — returns `200 {approved, totalPrice, note}`   |
+| `POST /v1/events/orders/bulk?count=N` | `{"product", "quantity", "amount"}`         | N seq-numbered events to the virtual topic (1–1000, default 100); product not blank, numbers positive |
+| `POST /v1/orders/quote`               | same body                                   | request-reply — returns `200 {approved, totalPrice, note}`   |
 
-Invalid payloads get `400`. The server generates the entity id (`orderId`, `paymentId`, `shipmentId`) and timestamp.
+Invalid payloads get `400`. The server generates `orderId` and the timestamp.
 
 ## Topics vs Queues in ActiveMQ
 
@@ -169,7 +156,6 @@ What this project runs:
 
 | Kind           | Destination                                             | Consumers                                       |
 |----------------|---------------------------------------------------------|-------------------------------------------------|
-| Plain topic    | `orders.topic`, `payments.topic`, `shipments.topic`     | 1 topic listener each (+1 durable on shipments) |
 | Virtual topic  | `VirtualTopic.orders` (publish side only)               | — (broker copies into queues below)             |
 | Queue          | `Consumer.workerA.VirtualTopic.orders`                  | 3 competing consumers (round-robin)             |
 | Queue          | `Consumer.workerB.VirtualTopic.orders`                  | 3 competing consumers (round-robin)             |
@@ -230,7 +216,7 @@ curl -X POST http://localhost:8080/v1/orders/quote \
 
 ## Durable topic subscription
 
-Plain topic subscribers miss whatever is published while they're offline. `DurableShipmentListener` registers a **durable subscription** on `shipments.topic` (identity = `clientId` `activemq-consumer` + subscription `shipments-durable-sub`) — the broker stores missed events and replays them on reconnect.
+Plain topic subscribers miss whatever is published while they're offline. `DurableOrderListener` registers a **durable subscription** on the `VirtualTopic.orders` topic (identity = `clientId` `activemq-consumer` + subscription `orders-durable-sub`) — the broker stores missed events and replays them on reconnect.
 
 ```mermaid
 sequenceDiagram
@@ -239,7 +225,7 @@ sequenceDiagram
     participant D as Durable subscriber
     D->>B: subscribe (clientId + subscription name)
     D--xB: consumer stopped
-    P->>B: shipment FDX-OFFLINE-1..3
+    P->>B: orders published while offline (x3)
     Note over B: stored for the durable subscription
     D->>B: consumer restarts
     B-->>D: replays all 3 (plain subscriber gets nothing)
@@ -247,7 +233,7 @@ sequenceDiagram
 
 Implementation note: a `clientId` must be set before the connection starts, which Boot's shared `CachingConnectionFactory` forbids — so `durableTopicListenerFactory` builds its own private connection factory (deliberately not a Spring bean; a second `ConnectionFactory` bean would switch off Boot's auto-configuration).
 
-Try it: stop the consumer → `POST /v1/events/shipments` a few times → start the consumer → watch `DURABLE consumed ...` catch-up lines; the plain listener stays silent.
+Try it: stop the consumer → `POST /v1/events/orders` a few times → start the consumer → watch `DURABLE consumed ...` catch-up lines; the plain listener stays silent.
 
 ## Redelivery + per-queue DLQ
 
@@ -282,7 +268,7 @@ Verified run: 4 `SIMULATED FAILURE seq=10` warnings with exact 0.5s/1s/2s gaps, 
 |-----------------------|-----------------------------------------------------|
 | Broker (OpenWire/JMS) | `tcp://localhost:61616`                             |
 | Web console           | <http://localhost:8161> — `admin` / `admin`         |
-| Topics                | `orders.topic`, `payments.topic`, `shipments.topic` |
+| Topic                 | `VirtualTopic.orders`                               |
 | Image                 | `apache/activemq-classic:6.1.7`                     |
 | Broker config         | `broker/activemq.xml` (per-queue DLQ strategy)      |
 
@@ -889,7 +875,7 @@ The virtual-topic pattern in this repo is ActiveMQ speaking Kafka's dialect: `Vi
 
 | Concept (section)               | Where it lives in this repo                                                                               |
 |---------------------------------|-----------------------------------------------------------------------------------------------------------|
-| Plain topics (§4)               | `orders.topic`, `payments.topic`, `shipments.topic`; `OrderCreatedEventListeners`                         |
+| Plain topic subscribers (§4)    | direct subscribers on `VirtualTopic.orders`: `OrderCreatedEventListeners` + `DurableOrderListener`                         |
 | Typed messages, properties (§5) | `_event` type id, `messageId`, `seq` properties; JSON `TextMessage`                                       |
 | Push + prefetch (§6)            | defaults; visible in even 34/33/33 spread                                                                 |
 | Auto-ack / redelivery (§7)      | Spring default `AUTO_ACKNOWLEDGE`; throw in a listener to watch redelivery → `ActiveMQ.DLQ`               |

@@ -2,9 +2,6 @@ package com.learnactivemq.publisher.controller;
 
 import com.learnactivemq.publisher.dto.BulkPublishResponse;
 import com.learnactivemq.publisher.dto.OrderRequest;
-import com.learnactivemq.publisher.dto.PaymentRequest;
-import com.learnactivemq.publisher.dto.PublishResponse;
-import com.learnactivemq.publisher.dto.ShipmentRequest;
 import com.learnactivemq.publisher.service.EventPublisherService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -27,28 +24,10 @@ public class EventController {
 
     private final EventPublisherService publisherService;
 
-    @PostMapping("/orders")
-    @ResponseStatus(HttpStatus.ACCEPTED)
-    public PublishResponse publishOrder(@Valid @RequestBody OrderRequest request) {
-        return publisherService.publishOrderCreated(request);
-    }
-
     @PostMapping("/orders/bulk")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    public BulkPublishResponse publishOrderBurst(@Valid @RequestBody OrderRequest request,
+    public BulkPublishResponse publishOrders(@Valid @RequestBody OrderRequest request,
                                                  @RequestParam(defaultValue = "100") @Min(1) @Max(1000) int count) {
-        return publisherService.publishOrderBurst(request, count);
-    }
-
-    @PostMapping("/payments")
-    @ResponseStatus(HttpStatus.ACCEPTED)
-    public PublishResponse publishPayment(@Valid @RequestBody PaymentRequest request) {
-        return publisherService.publishPaymentReceived(request);
-    }
-
-    @PostMapping("/shipments")
-    @ResponseStatus(HttpStatus.ACCEPTED)
-    public PublishResponse publishShipment(@Valid @RequestBody ShipmentRequest request) {
-        return publisherService.publishShipmentDispatched(request);
+        return publisherService.publishOrders(request, count);
     }
 }

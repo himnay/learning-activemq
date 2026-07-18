@@ -3,8 +3,6 @@ package com.learnactivemq.common.config;
 import com.learnactivemq.common.event.OrderCreatedEvent;
 import com.learnactivemq.common.event.OrderQuoteReply;
 import com.learnactivemq.common.event.OrderQuoteRequest;
-import com.learnactivemq.common.event.PaymentReceivedEvent;
-import com.learnactivemq.common.event.ShipmentDispatchedEvent;
 import java.util.Map;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -29,8 +27,6 @@ public class JmsEventConverterConfig {
         converter.setTypeIdPropertyName(TYPE_ID_PROPERTY);
         converter.setTypeIdMappings(Map.of(
                 "order-created", OrderCreatedEvent.class,
-                "payment-received", PaymentReceivedEvent.class,
-                "shipment-dispatched", ShipmentDispatchedEvent.class,
                 "order-quote-request", OrderQuoteRequest.class,
                 "order-quote-reply", OrderQuoteReply.class));
         return converter;

@@ -16,23 +16,7 @@
       "_type": "request_group",
       "parentId": "wrk_learning_activemq",
       "name": "Publisher — REST API (port 8080)",
-      "description": "Publishes typed events to orders.topic / payments.topic / shipments.topic"
-    },
-
-    {
-      "_id": "req_post_order_event",
-      "_type": "request",
-      "parentId": "fld_publisher",
-      "name": "POST — Publish OrderCreatedEvent",
-      "method": "POST",
-      "url": "http://localhost:8080/v1/events/orders",
-      "headers": [
-        { "name": "Content-Type", "value": "application/json" }
-      ],
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"product\": \"Laptop\",\n  \"quantity\": 2,\n  \"amount\": 2499.98\n}"
-      }
+      "description": "Publishes typed order events to orders.topic and VirtualTopic.orders"
     },
 
     {
@@ -48,38 +32,6 @@
       "body": {
         "mimeType": "application/json",
         "text": "{\n  \"product\": \"Widget\",\n  \"quantity\": 1,\n  \"amount\": 9.99\n}"
-      }
-    },
-
-    {
-      "_id": "req_post_payment_event",
-      "_type": "request",
-      "parentId": "fld_publisher",
-      "name": "POST — Publish PaymentReceivedEvent",
-      "method": "POST",
-      "url": "http://localhost:8080/v1/events/payments",
-      "headers": [
-        { "name": "Content-Type", "value": "application/json" }
-      ],
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"orderId\": \"replace-with-orderId\",\n  \"amount\": 2499.98,\n  \"method\": \"CARD\"\n}"
-      }
-    },
-
-    {
-      "_id": "req_post_shipment_event",
-      "_type": "request",
-      "parentId": "fld_publisher",
-      "name": "POST — Publish ShipmentDispatchedEvent",
-      "method": "POST",
-      "url": "http://localhost:8080/v1/events/shipments",
-      "headers": [
-        { "name": "Content-Type", "value": "application/json" }
-      ],
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"orderId\": \"replace-with-orderId\",\n  \"carrier\": \"DHL\",\n  \"trackingNumber\": \"DHL-123456\"\n}"
       }
     },
 
