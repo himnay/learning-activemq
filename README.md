@@ -170,15 +170,14 @@ So one bulk message is copied **twice** (once per worker queue), and inside each
 
 ## Round-robin demo (virtual topic)
 
-`POST /v1/events/orders/bulk?count=100` publishes a numbered burst of `OrderCreatedEvent`s to the **virtual topic** `VirtualTopic.orders`. The broker mirrors every message into each `Consumer.*.VirtualTopic.orders` queue, and inside a queue the competing consumers split the work round-robin:
+`POST /v1/events/orders/bulk?count=100` publishes a numbered burst of `OrderCreatedEvent`s to the **virtual topic** `VirtualTopic.orders`. The broker copies each message into the shared work queue, where the workerA and workerB listeners (3 competing consumers each) **compete** — the broker hands every message to exactly ONE of them, round-robin:
 
 ```
-publisher ──▶ VirtualTopic.orders ──▶ Consumer.workerA.VirtualTopic.orders ──▶ 3 competing consumers (~33/33/34)
-                                  └─▶ Consumer.workerB.VirtualTopic.orders ──▶ 3 competing consumers (~33/33/34)
+publisher ──▶ VirtualTopic.orders ──▶ Consumer.workers.VirtualTopic.orders ──▶ workerA | workerB (one wins per message, ~50/50)
 ```
 
-- **Fan-out across queues**: workerA and workerB each receive all 100 (copies).
-- **Round-robin within a queue**: the 3 consumers (`queueListenerFactory`; concurrency from `app.listener.worker-concurrency`) alternate — watch `seq=1/2/3/4…` land on threads `#-1/#-2/#-3/#-1…` in the consumer log.
+- **Load balancing**: verified split — 20 published → workerA 10, workerB 10, alternating (`seq 1→A, 2→B, 3→A…`). Round-robin only happens between consumers of the *same* queue.
+- **Want group fan-out instead** (each worker gets every message, Kafka consumer-group style)? Give each listener its own queue name in `app.queues.*` — e.g. `Consumer.workerA.VirtualTopic.orders` and `Consumer.workerB.VirtualTopic.orders`; the broker then copies each message into both.
 - Virtual-topic queues are real queues — browsable in the web console under **Queues**, unlike plain topics.
 
 ```bash

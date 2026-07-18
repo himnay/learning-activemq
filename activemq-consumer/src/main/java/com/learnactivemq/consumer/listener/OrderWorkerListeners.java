@@ -35,12 +35,14 @@ public class OrderWorkerListeners {
     public void onWorkerA(OrderCreatedEvent event,
                           @Header(name = "seq", required = false) Integer seq,
                           @Header(JmsHeaders.DESTINATION) Destination destination) {
+        log.info("workerA consumed from={} seq={} orderId={} thread={}",
+                destination, seq, event.orderId(), Thread.currentThread().getName());
+
         if (failSeqMultiple > 0 && seq != null && seq % failSeqMultiple == 0) {
             log.warn("workerA SIMULATED FAILURE seq={} — rolling back for redelivery", seq);
             throw new IllegalStateException("simulated failure for seq=" + seq);
         }
-        log.info("workerA consumed from={} seq={} orderId={} thread={}",
-                destination, seq, event.orderId(), Thread.currentThread().getName());
+
     }
 
     /** Handles worker b. */
