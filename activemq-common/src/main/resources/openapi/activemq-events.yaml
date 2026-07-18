@@ -1,0 +1,124 @@
+openapi: 3.1.0
+info:
+  title: learning-activemq — Event Contracts
+  version: 0.0.1
+  description: |
+    Schemas for the typed events exchanged over ActiveMQ by the publisher and
+    consumer modules. Events travel as JSON `TextMessage`s; the `_event` JMS
+    property carries the type id that maps a message back to its record:
+
+    | `_event` type id      | Schema                 | Destination            |
+    |-----------------------|------------------------|------------------------|
+    | `order-created`       | OrderCreatedEvent      | `VirtualTopic.orders`  |
+    | `order-quote-request` | OrderQuoteRequest      | `orders.quote.queue`   |
+    | `order-quote-reply`   | OrderQuoteReply        | temporary reply queue  |
+
+    Every outgoing event also carries the JMS properties `messageId`,
+    `eventType`, `source` and `publishedAtEpochMs` (see
+    `EventHeaderPostProcessor`), plus `seq` for bulk publishes.
+
+# OpenAPI webhooks model the push direction: the broker delivering an event
+# to a subscriber is described like an outgoing call with the event as body.
+webhooks:
+  order-created:
+    post:
+      summary: OrderCreatedEvent delivered to a subscriber
+      description: >
+        Published to VirtualTopic.orders. Received by the plain and durable
+        topic subscribers and, as broker copies, by the
+        Consumer.workerA/workerB.VirtualTopic.orders queues.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderCreatedEvent'
+      responses:
+        '200':
+          description: Acknowledged (listener returned normally)
+  order-quote-request:
+    post:
+      summary: OrderQuoteRequest delivered to the quote responder
+      description: >
+        Sent to orders.quote.queue with JMSReplyTo and JMSCorrelationID set.
+        The responder answers with an OrderQuoteReply on the reply queue.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderQuoteRequest'
+      responses:
+        '200':
+          description: Reply produced
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderQuoteReply'
+
+components:
+  schemas:
+    OrderCreatedEvent:
+      type: object
+      description: An order was created. Type id `order-created`.
+      required: [orderId, product, quantity, amount, createdAt]
+      properties:
+        orderId:
+          type: string
+          format: uuid
+          description: Server-generated order identifier
+          examples: ["7de6bc54-fd5d-4b5c-bc81-5dfdd7656aea"]
+        product:
+          type: string
+          description: Product name
+          examples: ["Laptop"]
+        quantity:
+          type: integer
+          format: int32
+          minimum: 1
+          examples: [2]
+        amount:
+          type: number
+          description: Order amount (unit price in the quote flow)
+          examples: [2499.98]
+        createdAt:
+          type: string
+          format: date-time
+          description: Server-side creation timestamp (ISO-8601)
+          examples: ["2026-07-18T11:02:29.045Z"]
+
+    OrderQuoteRequest:
+      type: object
+      description: Ask the consumer to price an order. Type id `order-quote-request`.
+      required: [product, quantity, unitPrice]
+      properties:
+        product:
+          type: string
+          examples: ["Laptop"]
+        quantity:
+          type: integer
+          format: int32
+          minimum: 1
+          examples: [2]
+        unitPrice:
+          type: number
+          examples: [1200.00]
+
+    OrderQuoteReply:
+      type: object
+      description: >
+        Answer to an OrderQuoteRequest, returned on the request's JMSReplyTo
+        destination with the JMSCorrelationID copied. Type id `order-quote-reply`.
+      required: [approved, totalPrice, note]
+      properties:
+        approved:
+          type: boolean
+          description: true while totalPrice is within the approval limit (5000)
+          examples: [true]
+        totalPrice:
+          type: number
+          description: unitPrice × quantity
+          examples: [2400.00]
+        note:
+          type: string
+          examples: ["within approval limit"]

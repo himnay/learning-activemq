@@ -59,6 +59,11 @@ All modules inherit from the root POM (shared: `spring-boot-starter-activemq`, a
 
 Serialization: `JacksonJsonMessageConverter` writes JSON text messages and sets an `_event` type-id header (`order-created`, `order-quote-request`, `order-quote-reply`). The consumer maps that header back to its event class — both sides share the records via `activemq-common`, and the type-id (not the class name) travels on the wire.
 
+Contracts are OpenAPI 3.1, one spec per module:
+
+- [`activemq-common/.../openapi/activemq-events.yaml`](activemq-common/src/main/resources/openapi/activemq-events.yaml) — the three event schemas + webhook entries modelling broker→subscriber delivery.
+- [`activemq-publisher/.../openapi/activemq-publisher-api.yaml`](activemq-publisher/src/main/resources/openapi/activemq-publisher-api.yaml) — the REST endpoints. The `OrderRequest`/`BulkPublishResponse` DTOs are **generated from this spec** at build time (openapi-generator, contract-first) — there are no hand-written DTO classes in the publisher; validation rules come from the schema constraints.
+
 Topics are pub/sub (`spring.jms.pub-sub-domain: true` on both sides): every live subscriber gets a copy, and listener concurrency stays at 1 — extra topic consumers would each receive a duplicate.
 
 Every listener also logs the JMS destination it consumed from (`from=topic://VirtualTopic.orders`, `from=queue://Consumer.workerA.VirtualTopic.orders`) via the `jms_destination` header.

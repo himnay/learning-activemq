@@ -5,6 +5,7 @@ import com.learnactivemq.publisher.dto.BulkPublishResponse;
 import com.learnactivemq.publisher.dto.OrderRequest;
 import com.learnactivemq.publisher.jms.EventHeaderPostProcessor;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -34,12 +35,15 @@ public class EventPublisherService {
     public BulkPublishResponse publishOrders(OrderRequest request, int count) {
         for (int seq = 1; seq <= count; seq++) {
             OrderCreatedEvent event = new OrderCreatedEvent(
-                    UUID.randomUUID().toString(), request.product(), request.quantity(),
-                    request.amount(), Instant.now());
+                    UUID.randomUUID().toString(), request.getProduct(), request.getQuantity(),
+                    request.getAmount(), Instant.now());
             jmsTemplate.convertAndSend(virtualOrdersTopic, event,
                     new EventHeaderPostProcessor("order-created", UUID.randomUUID().toString(), seq));
         }
         log.info("Published burst of {} order-created events to topic={}", count, virtualOrdersTopic);
-        return new BulkPublishResponse(count, virtualOrdersTopic, Instant.now());
+        return new BulkPublishResponse()
+                .count(count)
+                .topic(virtualOrdersTopic)
+                .publishedAt(OffsetDateTime.now());
     }
 }

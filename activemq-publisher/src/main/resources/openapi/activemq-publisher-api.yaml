@@ -1,0 +1,99 @@
+openapi: 3.1.0
+info:
+  title: activemq-publisher — REST API
+  version: 0.0.1
+  description: >
+    REST surface of the publisher module. The request/response DTOs
+    (OrderRequest, BulkPublishResponse) are generated from this spec by
+    openapi-generator at build time — do not hand-edit them.
+
+paths:
+  /v1/events/orders/bulk:
+    post:
+      summary: Publish a burst of order-created events
+      description: >
+        Publishes `count` seq-numbered OrderCreatedEvents to VirtualTopic.orders
+        (count=1 for a single event).
+      parameters:
+        - name: count
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 1000
+            default: 100
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderRequest'
+      responses:
+        '202':
+          description: Accepted — events published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkPublishResponse'
+        '400':
+          description: Validation failure
+  /v1/orders/quote:
+    post:
+      summary: Request an order quote (request-reply over JMS)
+      description: >
+        The reply body is the shared OrderQuoteReply event record defined in
+        activemq-common (see its openapi/activemq-events.yaml).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderRequest'
+      responses:
+        '200':
+          description: Quote reply received (OrderQuoteReply)
+        '400':
+          description: Validation failure
+        '504':
+          description: No responder answered within the 5s timeout
+
+components:
+  schemas:
+    OrderRequest:
+      type: object
+      description: Request body for publishing orders and requesting quotes.
+      required: [product, quantity, amount]
+      properties:
+        product:
+          type: string
+          minLength: 1
+          examples: ["Laptop"]
+        quantity:
+          type: integer
+          format: int32
+          minimum: 1
+          examples: [2]
+        amount:
+          type: number
+          exclusiveMinimum: 0
+          description: Unit price
+          examples: [1200.00]
+
+    BulkPublishResponse:
+      type: object
+      description: Acknowledgement for a bulk publish.
+      required: [count, topic, publishedAt]
+      properties:
+        count:
+          type: integer
+          format: int32
+          examples: [100]
+        topic:
+          type: string
+          examples: ["VirtualTopic.orders"]
+        publishedAt:
+          type: string
+          format: date-time
+          examples: ["2026-07-18T11:02:29.045Z"]

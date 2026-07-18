@@ -37,10 +37,10 @@ public class QuoteService {
     public OrderQuoteReply requestQuote(OrderRequest request) throws Exception {
         String correlationId = UUID.randomUUID().toString();
         OrderQuoteRequest quoteRequest =
-                new OrderQuoteRequest(request.product(), request.quantity(), request.amount());
+                new OrderQuoteRequest(request.getProduct(), request.getQuantity(), request.getAmount());
 
         log.info("Quote request correlationId={} product={} qty={}",
-                correlationId, request.product(), request.quantity());
+                correlationId, request.getProduct(), request.getQuantity());
 
         Message reply = queueJmsTemplate.sendAndReceive(quoteQueue, session -> {
             Message message = messageConverter.toMessage(quoteRequest, session);
