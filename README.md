@@ -110,13 +110,12 @@ curl -X POST 'http://localhost:8080/v1/events/orders/bulk?count=1' \
   -d '{"product": "Laptop", "quantity": 2, "amount": 2499.98}'
 ```
 
-One published event fans out to every consumption pattern — consumer log:
+One published event reaches both topic subscribers, and exactly ONE of the competing workers — consumer log:
 
 ```
 Consumed order-created from=topic://VirtualTopic.orders id=<uuid> orderId=<uuid> product=Laptop qty=2 amount=2499.98
 DURABLE consumed order-created from=topic://VirtualTopic.orders id=<uuid> orderId=<uuid> product=Laptop qty=2
-workerA consumed from=queue://Consumer.workerA.VirtualTopic.orders seq=1 orderId=<uuid> thread=...
-workerB consumed from=queue://Consumer.workerB.VirtualTopic.orders seq=1 orderId=<uuid> thread=...
+workerA consumed from=queue://Consumer.workers.VirtualTopic.orders seq=1 orderId=<uuid> thread=...
 ```
 
 ## API
