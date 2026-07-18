@@ -29,6 +29,7 @@ public class OrderWorkerListeners {
         this.failSeqMultiple = failSeqMultiple;
     }
 
+    /** Handles worker a. */
     @JmsListener(destination = "${app.queues.worker-a}", containerFactory = "queueListenerFactory",
             concurrency = "${app.listener.worker-concurrency}")
     public void onWorkerA(OrderCreatedEvent event,
@@ -42,6 +43,7 @@ public class OrderWorkerListeners {
                 destination, seq, event.orderId(), Thread.currentThread().getName());
     }
 
+    /** Handles worker b. */
     @JmsListener(destination = "${app.queues.worker-b}", containerFactory = "queueListenerFactory",
             concurrency = "${app.listener.worker-concurrency}")
     public void onWorkerB(OrderCreatedEvent event,

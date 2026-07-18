@@ -16,6 +16,7 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class RedeliveryConfig {
 
+    /** Defines the redelivery policy customizer bean. */
     @Bean
     public ActiveMQConnectionFactoryCustomizer redeliveryPolicyCustomizer() {
         return factory -> {

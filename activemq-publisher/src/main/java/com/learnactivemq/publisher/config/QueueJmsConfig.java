@@ -20,6 +20,7 @@ import org.springframework.jms.support.converter.MessageConverter;
 @Configuration
 public class QueueJmsConfig {
 
+    /** Defines the jms template bean. */
     @Bean
     @Primary
     public JmsTemplate jmsTemplate(ConnectionFactory connectionFactory,
@@ -30,6 +31,7 @@ public class QueueJmsConfig {
         return template;
     }
 
+    /** Defines the queue jms template bean. */
     @Bean
     public JmsTemplate queueJmsTemplate(ConnectionFactory connectionFactory,
                                         MessageConverter messageConverter) {

@@ -19,6 +19,7 @@ public class QuoteController {
 
     private final QuoteService quoteService;
 
+    /** Returns the quote. */
     @PostMapping("/quote")
     public ResponseEntity<OrderQuoteReply> quote(@Valid @RequestBody OrderRequest request)
             throws Exception {

@@ -17,6 +17,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class OrderCreatedEventListeners {
 
+    /** Handles order created. */
     @JmsListener(destination = "${app.topics.virtual-orders}")
     public void onOrderCreated(OrderCreatedEvent event,
                                @Header(name = "messageId", required = false) String messageId,

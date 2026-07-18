@@ -17,6 +17,7 @@ import org.springframework.jms.connection.CachingConnectionFactory;
 @Configuration
 public class QueueListenerConfig {
 
+    /** Defines the queue listener factory bean. */
     @Bean
     public DefaultJmsListenerContainerFactory queueListenerFactory(
             ConnectionFactory connectionFactory,

@@ -33,6 +33,7 @@ public class QuoteService {
         this.quoteQueue = quoteQueue;
     }
 
+    /** Requests quote. */
     public OrderQuoteReply requestQuote(OrderRequest request) throws Exception {
         String correlationId = UUID.randomUUID().toString();
         OrderQuoteRequest quoteRequest =

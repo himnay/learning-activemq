@@ -20,6 +20,7 @@ public class JmsEventConverterConfig {
 
     public static final String TYPE_ID_PROPERTY = "_event";
 
+    /** Defines the jackson jms message converter bean. */
     @Bean
     public MessageConverter jacksonJmsMessageConverter() {
         JacksonJsonMessageConverter converter = new JacksonJsonMessageConverter();

@@ -24,6 +24,7 @@ public class EventController {
 
     private final EventPublisherService publisherService;
 
+    /** Publishes orders. */
     @PostMapping("/orders/bulk")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public BulkPublishResponse publishOrders(@Valid @RequestBody OrderRequest request,

@@ -30,6 +30,7 @@ public class EventPublisherService {
         this.virtualOrdersTopic = virtualOrdersTopic;
     }
 
+    /** Publishes orders. */
     public BulkPublishResponse publishOrders(OrderRequest request, int count) {
         for (int seq = 1; seq <= count; seq++) {
             OrderCreatedEvent event = new OrderCreatedEvent(

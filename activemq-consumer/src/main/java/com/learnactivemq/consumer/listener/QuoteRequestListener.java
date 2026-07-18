@@ -21,6 +21,7 @@ public class QuoteRequestListener {
 
     private static final BigDecimal APPROVAL_LIMIT = new BigDecimal("5000");
 
+    /** Handles quote request. */
     @JmsListener(destination = "${app.queues.quote}", containerFactory = "queueListenerFactory")
     public OrderQuoteReply onQuoteRequest(OrderQuoteRequest request,
                                           @Header(JmsHeaders.CORRELATION_ID) String correlationId,

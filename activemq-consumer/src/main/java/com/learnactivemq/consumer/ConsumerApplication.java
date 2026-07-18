@@ -11,6 +11,7 @@ import org.springframework.jms.annotation.EnableJms;
 @Import(JmsEventConverterConfig.class)
 class ConsumerApplication {
 
+    /** Application entry point. */
     public static void main(String[] args) {
         SpringApplication.run(ConsumerApplication.class, args);
     }

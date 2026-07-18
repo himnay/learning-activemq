@@ -20,6 +20,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class DurableOrderListener {
 
+    /** Handles order durable. */
     @JmsListener(destination = "${app.topics.virtual-orders}",
             containerFactory = "durableTopicListenerFactory",
             subscription = "${app.subscriptions.orders-durable}")
