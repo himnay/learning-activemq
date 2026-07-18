@@ -5,11 +5,11 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Import;
 
-@Import(JmsEventConverterConfig.class)
 @SpringBootApplication
+@Import(JmsEventConverterConfig.class)
 class PublisherApplication {
 
-    public static void main(String[] args) {
+    static void main(String[] args) {
         SpringApplication.run(PublisherApplication.class, args);
     }
 }

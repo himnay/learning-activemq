@@ -84,6 +84,22 @@
     },
 
     {
+      "_id": "req_post_quote",
+      "_type": "request",
+      "parentId": "fld_publisher",
+      "name": "POST — Order Quote (request-reply)",
+      "method": "POST",
+      "url": "http://localhost:8080/v1/orders/quote",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"product\": \"Laptop\",\n  \"quantity\": 2,\n  \"amount\": 1200.00\n}"
+      }
+    },
+
+    {
       "_id": "req_publisher_health",
       "_type": "request",
       "parentId": "fld_publisher",
