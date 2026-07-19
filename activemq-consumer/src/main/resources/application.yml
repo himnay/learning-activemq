@@ -6,32 +6,22 @@ spring:
     user: ${ACTIVEMQ_USER:admin}
     password: ${ACTIVEMQ_PASSWORD:admin}
   jms:
-    pub-sub-domain: true   # subscribe to topics; concurrency stays 1 — extra topic consumers would each get a copy
+    pub-sub-domain: true
 
 server:
   port: 8081
 
 app:
   listener:
-    # competing consumers per worker queue (min-max); round-robin happens across these
     worker-concurrency: 3-3
-    # DLQ demo: when > 0, workerA throws for every seq divisible by this value —
-    # watch redeliveries (backoff) then the message land in DLQ.Consumer.workerA.VirtualTopic.orders
     fail-seq-multiple: 0
   topics:
-    virtual-orders: VirtualTopic.orders   # plain + durable subscribers attach here directly
+    virtual-orders: VirtualTopic.orders
   queues:
-    # ONE shared work queue — workerA and workerB compete on it, so the broker
-    # round-robins each message to exactly one of them (visible load balancing).
-    # For group-style fan-out instead (each worker gets every message, Kafka
-    # consumer-group style) give each worker its own queue name, e.g.
-    # Consumer.workerA... and Consumer.workerB...
-    worker-a: Consumer.workers.VirtualTopic.orders
-    worker-b: Consumer.workers.VirtualTopic.orders
-    quote: orders.quote.queue             # request-reply — reply goes to JMSReplyTo
+    worker-a: Consumer.workers.VirtualTopic.orders  # pattern Consumer.<group>.VirtualTopic.<topicName>
+    worker-b: Consumer.workers.VirtualTopic.orders  # pattern Consumer.<group>.VirtualTopic.<topicName>
+    quote: orders.quote.queue
   subscriptions:
-    # durable topic subscription — broker stores order events published while
-    # this consumer is offline and replays them on reconnect (clientId + name)
     orders-durable: orders-durable-sub
 
 management:
