@@ -3,12 +3,14 @@ package com.learnactivemq.publisher.controller;
 import com.learnactivemq.publisher.dto.BulkPublishResponse;
 import com.learnactivemq.publisher.dto.OrderRequest;
 import com.learnactivemq.publisher.service.EventPublisherService;
+import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -30,5 +32,12 @@ public class EventController {
     public BulkPublishResponse publishOrders(@Valid @RequestBody OrderRequest request,
                                                  @RequestParam(defaultValue = "100") @Min(1) @Max(1000) int count) {
         return publisherService.publishOrders(request, count);
+    }
+
+    /** Query-param constraints (e.g. count) throw here rather than the @Valid body path — map to 400 too. */
+    @ExceptionHandler(ConstraintViolationException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public String onConstraintViolation(ConstraintViolationException ex) {
+        return ex.getMessage();
     }
 }

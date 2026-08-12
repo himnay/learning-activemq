@@ -1,0 +1,4 @@
+spring:
+  activemq:
+    # in-JVM broker — no docker-compose broker needed to run these tests
+    broker-url: vm://consumer-it-broker?broker.persistent=false&create=true

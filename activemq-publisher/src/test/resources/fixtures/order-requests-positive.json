@@ -1,0 +1,36 @@
+[
+  {
+    "type": "bulk-order",
+    "count": 3,
+    "payload": {
+      "product": "Laptop",
+      "quantity": 2,
+      "amount": 1200.00
+    }
+  },
+  {
+    "type": "bulk-order",
+    "count": 5,
+    "payload": {
+      "product": "Monitor",
+      "quantity": 1,
+      "amount": 250.50
+    }
+  },
+  {
+    "type": "quote-request",
+    "payload": {
+      "product": "Server Rack",
+      "quantity": 3,
+      "amount": 1500.00
+    }
+  },
+  {
+    "type": "quote-request",
+    "payload": {
+      "product": "Small Order",
+      "quantity": 1,
+      "amount": 99.99
+    }
+  }
+]

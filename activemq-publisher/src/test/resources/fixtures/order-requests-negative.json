@@ -1,0 +1,52 @@
+[
+  {
+    "type": "quote-request-rejected",
+    "payload": {
+      "product": "Bulk Cables",
+      "quantity": 100,
+      "amount": 60.00
+    }
+  },
+  {
+    "type": "quote-request-rejected",
+    "payload": {
+      "product": "Server Farm",
+      "quantity": 10,
+      "amount": 900.00
+    }
+  },
+  {
+    "type": "invalid-order",
+    "payload": {
+      "product": "",
+      "quantity": 2,
+      "amount": 100.00
+    }
+  },
+  {
+    "type": "invalid-order",
+    "payload": {
+      "product": "Laptop",
+      "quantity": 0,
+      "amount": 100.00
+    }
+  },
+  {
+    "type": "invalid-bulk-count",
+    "count": 0,
+    "payload": {
+      "product": "Laptop",
+      "quantity": 2,
+      "amount": 100.00
+    }
+  },
+  {
+    "type": "invalid-bulk-count",
+    "count": 5000,
+    "payload": {
+      "product": "Laptop",
+      "quantity": 2,
+      "amount": 100.00
+    }
+  }
+]

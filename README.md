@@ -2,6 +2,49 @@
 
 Spring Boot + ActiveMQ Classic learning project — event-driven style. A REST API publishes a typed `OrderCreatedEvent` as JSON (Jackson message converter with type-id mappings, shared records in a common module); a standalone consumer subscribes with `@JmsListener`s. Around that one event the project demonstrates the classic messaging patterns: plain pub/sub, virtual-topic round-robin, request-reply, durable subscriptions, and redelivery with per-queue DLQs.
 
+## Table of Contents
+
+**Part 1 — The Project**
+
+1. 🏗️ [Architecture](#architecture) · 🧩 [Types](#types)
+2. 📦 [Modules](#modules)
+3. ✉️ [Events & serialization](#events--serialization)
+4. 🚀 [Quick start](#quick-start)
+5. 🌐 [API](#api)
+6. 🧠 [Topics vs Queues](#topics-vs-queues-in-activemq)
+7. 🔁 [Pattern: round-robin over a virtual topic](#round-robin-demo-virtual-topic)
+8. 🤝 [Pattern: request-reply](#request-reply-jmsreplyto--jmscorrelationid)
+9. 📌 [Pattern: durable topic subscription](#durable-topic-subscription)
+10. ☠️ [Pattern: redelivery + per-queue DLQ](#redelivery--per-queue-dlq)
+11. 🖥️ [The broker: console & config](#activemq-broker)
+12. ⚙️ [Configuration](#configuration)
+13. 🤝 [Insomnia](#insomnia) · 📊 [Observability](#observability)
+
+**Part 2 — [ActiveMQ Deep Dive](#activemq-deep-dive)**
+
+1. 💡 [What is ActiveMQ](#1-what-is-activemq)
+2. 🏗️ [Broker architecture](#2-broker-architecture)
+3. 📦 [Destinations: queues](#3-destinations-queues)
+4. 📣 [Destinations: topics](#4-destinations-topics)
+5. ✉️ [Anatomy of a message](#5-anatomy-of-a-message)
+6. ⚡ [Message consumption: prefetch and dispatch](#6-message-consumption-prefetch-and-dispatch)
+7. ✅ [Acknowledgement modes and transactions](#7-acknowledgement-modes-and-transactions)
+8. 🔁 [Competing consumers and round-robin](#8-competing-consumers-and-round-robin)
+9. 📌 [Durable subscriptions](#9-durable-subscriptions)
+10. 🪄 [Virtual topics](#10-virtual-topics)
+11. 💾 [Persistence: KahaDB](#11-persistence-kahadb)
+12. ☠️ [Redelivery and dead-letter queues](#12-redelivery-and-dead-letter-queues)
+13. 🎯 [Selectors, exclusive consumers, message groups](#13-selectors-exclusive-consumers-message-groups)
+14. ⏰ [Scheduled and delayed delivery](#14-scheduled-and-delayed-delivery)
+15. 🚦 [Memory limits and flow control](#15-memory-limits-and-flow-control)
+16. 🛡️ [High availability and networks of brokers](#16-high-availability-and-networks-of-brokers)
+17. 🌱 [Spring Boot integration model](#17-spring-boot-integration-model)
+18. 📊 [Monitoring: console, JMX, advisory topics](#18-monitoring-console-jmx-advisory-topics)
+19. ⚖️ [ActiveMQ vs Kafka vs RabbitMQ](#19-activemq-vs-kafka-vs-rabbitmq)
+20. 🗺️ [How this project maps to all of the above](#20-how-this-project-maps-to-all-of-the-above)
+
+---
+
 ## Architecture
 
 ```mermaid
@@ -15,30 +58,9 @@ flowchart LR
     qq <--> con
 ```
 
-## Types 
+## Types
 
 ![messaging-broker-types.png](images/messaging-broker-types.png)
-
-## Table of Contents
-
-**Part 1 — The Project**
-
-1. 📦 [Modules](#modules)
-2. ✉️ [Events & serialization](#events--serialization)
-3. 🚀 [Quick start](#quick-start)
-4. 🌐 [API](#api)
-5. 🧠 [Topics vs Queues](#topics-vs-queues-in-activemq)
-6. 🔁 [Pattern: round-robin over a virtual topic](#round-robin-demo-virtual-topic)
-7. 🤝 [Pattern: request-reply](#request-reply-jmsreplyto--jmscorrelationid)
-8. 📌 [Pattern: durable topic subscription](#durable-topic-subscription)
-9. ☠️ [Pattern: redelivery + per-queue DLQ](#redelivery--per-queue-dlq)
-10. 🖥️ [The broker: console & config](#activemq-broker)
-11. ⚙️ [Configuration](#configuration)
-12. 🤝 [Insomnia](#insomnia) · 📊 [Observability](#observability)
-
-**Part 2 — [ActiveMQ Deep Dive](#activemq-deep-dive)** — 20 illustrated reference sections: broker internals, queues vs topics, prefetch, acks, DLQ, KahaDB, virtual topics, HA, Spring wiring, ActiveMQ vs Kafka vs RabbitMQ.
-
----
 
 ## Modules
 
@@ -320,32 +342,7 @@ Actuator on both modules: `/actuator/health`, `/actuator/metrics`, `/actuator/pr
 
 # ActiveMQ Deep Dive
 
-Reference half of this README — everything you need to reason about ActiveMQ Classic, with diagrams. Each section stands alone; skim the diagrams first, read the prose when needed.
-
----
-
-## Table of Contents
-
-1. 💡 [What is ActiveMQ](#1-what-is-activemq)
-2. 🏗️ [Broker architecture](#2-broker-architecture)
-3. 📦 [Destinations: queues](#3-destinations-queues)
-4. 📣 [Destinations: topics](#4-destinations-topics)
-5. ✉️ [Anatomy of a message](#5-anatomy-of-a-message)
-6. ⚡ [Message consumption: prefetch and dispatch](#6-message-consumption-prefetch-and-dispatch)
-7. ✅ [Acknowledgement modes and transactions](#7-acknowledgement-modes-and-transactions)
-8. 🔁 [Competing consumers and round-robin](#8-competing-consumers-and-round-robin)
-9. 📌 [Durable subscriptions](#9-durable-subscriptions)
-10. 🪄 [Virtual topics](#10-virtual-topics)
-11. 💾 [Persistence: KahaDB](#11-persistence-kahadb)
-12. ☠️ [Redelivery and dead-letter queues](#12-redelivery-and-dead-letter-queues)
-13. 🎯 [Selectors, exclusive consumers, message groups](#13-selectors-exclusive-consumers-message-groups)
-14. ⏰ [Scheduled and delayed delivery](#14-scheduled-and-delayed-delivery)
-15. 🚦 [Memory limits and flow control](#15-memory-limits-and-flow-control)
-16. 🛡️ [High availability and networks of brokers](#16-high-availability-and-networks-of-brokers)
-17. 🌱 [Spring Boot integration model](#17-spring-boot-integration-model)
-18. 📊 [Monitoring: console, JMX, advisory topics](#18-monitoring-console-jmx-advisory-topics)
-19. ⚖️ [ActiveMQ vs Kafka vs RabbitMQ](#19-activemq-vs-kafka-vs-rabbitmq)
-20. 🗺️ [How this project maps to all of the above](#20-how-this-project-maps-to-all-of-the-above)
+Reference half of this README — everything you need to reason about ActiveMQ Classic, with diagrams. Each section stands alone; skim the diagrams first, read the prose when needed. (See [Table of Contents](#table-of-contents) at the top for the full section list.)
 
 ---
 

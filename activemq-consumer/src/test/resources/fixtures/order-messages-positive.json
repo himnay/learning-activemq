@@ -1,0 +1,48 @@
+[
+  {
+    "type": "order-created",
+    "payload": {
+      "orderId": "ORD-1001",
+      "product": "Laptop",
+      "quantity": 2,
+      "amount": 1200.00,
+      "createdAt": "2026-08-01T10:15:30Z"
+    }
+  },
+  {
+    "type": "order-created",
+    "payload": {
+      "orderId": "ORD-1002",
+      "product": "Monitor",
+      "quantity": 5,
+      "amount": 250.50,
+      "createdAt": "2026-08-01T10:16:05Z"
+    }
+  },
+  {
+    "type": "order-created",
+    "payload": {
+      "orderId": "ORD-1003",
+      "product": "Keyboard",
+      "quantity": 10,
+      "amount": 45.00,
+      "createdAt": "2026-08-01T10:17:42Z"
+    }
+  },
+  {
+    "type": "order-quote-request",
+    "payload": {
+      "product": "Server Rack",
+      "quantity": 3,
+      "unitPrice": 1500.00
+    }
+  },
+  {
+    "type": "order-quote-request",
+    "payload": {
+      "product": "Small Order",
+      "quantity": 1,
+      "unitPrice": 99.99
+    }
+  }
+]

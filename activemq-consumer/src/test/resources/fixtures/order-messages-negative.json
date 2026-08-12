@@ -1,0 +1,26 @@
+[
+  {
+    "type": "order-quote-request",
+    "payload": {
+      "product": "Bulk Cables",
+      "quantity": 100,
+      "unitPrice": 60.00
+    }
+  },
+  {
+    "type": "order-quote-request",
+    "payload": {
+      "product": "Server Farm",
+      "quantity": 10,
+      "unitPrice": 900.00
+    }
+  },
+  {
+    "type": "order-quote-request",
+    "payload": {
+      "product": "Just Over The Limit",
+      "quantity": 2,
+      "unitPrice": 2500.01
+    }
+  }
+]
