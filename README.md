@@ -116,6 +116,7 @@ Prerequisites: Java 25, Maven, Docker (for the ActiveMQ broker).
 ```bash
 # 1. Start ActiveMQ
 docker compose up -d
+# web console: http://localhost:8161/admin/ — admin/admin
 
 # 2. Build everything
 mvn clean install
@@ -310,7 +311,7 @@ Verified run: 4 `SIMULATED FAILURE seq=10` warnings with exact 0.5s/1s/2s gaps, 
 | Thing                 | Value                                               |
 |-----------------------|-----------------------------------------------------|
 | Broker (OpenWire/JMS) | `tcp://localhost:61616`                             |
-| Web console           | <http://localhost:8161> — `admin` / `admin`         |
+| Web console           | <http://localhost:8161/admin/> — `admin` / `admin`  |
 | Topic                 | `VirtualTopic.orders`                               |
 | Image                 | `apache/activemq-classic:6.1.7`                     |
 | Broker config         | `broker/activemq.xml` (per-queue DLQ strategy)      |
