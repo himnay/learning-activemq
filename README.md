@@ -1,8 +1,8 @@
-# <span style="color:hsl(320,68%,44%)">learning-activemq</span>
+# <span style="color:hsl(320,80%,58%)">learning-activemq</span>
 
 Spring Boot + ActiveMQ Classic learning project — event-driven style. A REST API publishes a typed `OrderCreatedEvent` as JSON (Jackson message converter with type-id mappings, shared records in a common module); a standalone consumer subscribes with `@JmsListener`s. Around that one event the project demonstrates the classic messaging patterns: plain pub/sub, virtual-topic round-robin, request-reply, durable subscriptions, and redelivery with per-queue DLQs.
 
-## <span style="color:hsl(329,68%,44%)">Table of Contents</span>
+## <span style="color:hsl(98,80%,58%)">Table of Contents</span>
 
 **Part 1 — The Project**
 
@@ -45,7 +45,7 @@ Spring Boot + ActiveMQ Classic learning project — event-driven style. A REST A
 
 ---
 
-## <span style="color:hsl(338,68%,44%)">Architecture</span>
+## <span style="color:hsl(235,80%,58%)">Architecture</span>
 
 ```mermaid
 flowchart LR
@@ -58,11 +58,11 @@ flowchart LR
     qq <--> con
 ```
 
-## <span style="color:hsl(347,68%,44%)">Types</span>
+## <span style="color:hsl(13,80%,58%)">Types</span>
 
 ![messaging-broker-types.png](images/messaging-broker-types.png)
 
-## <span style="color:hsl(356,68%,44%)">Modules</span>
+## <span style="color:hsl(150,80%,58%)">Modules</span>
 
 | Module                | Port | What it does                                                                                    |
 |-----------------------|------|-------------------------------------------------------------------------------------------------|
@@ -72,7 +72,7 @@ flowchart LR
 
 All modules inherit from the root POM (shared: `spring-boot-starter-activemq`, actuator, Lombok, test) which inherits from `super-pom` (Spring Boot parent, Java toolchain, BOM).
 
-## <span style="color:hsl(5,68%,44%)">Events & serialization</span>
+## <span style="color:hsl(288,80%,58%)">Events & serialization</span>
 
 | Event                     | Destination                            | Fields                                                                          |
 |---------------------------|----------------------------------------|---------------------------------------------------------------------------------|
@@ -90,7 +90,7 @@ Topics are pub/sub (`spring.jms.pub-sub-domain: true` on both sides): every live
 
 Every listener also logs the JMS destination it consumed from (`from=topic://VirtualTopic.orders`, `from=queue://Consumer.workerA.VirtualTopic.orders`) via the `jms_destination` header.
 
-### <span style="color:hsl(14,68%,44%)">Message properties — the JMS version of Kafka producer headers</span>
+### <span style="color:hsl(65,80%,50%)">Message properties — the JMS version of Kafka producer headers</span>
 
 `EventHeaderPostProcessor` (a `MessagePostProcessor`) runs after the converter builds the message and stamps metadata as **JMS properties**, keeping it out of the JSON body:
 
@@ -109,7 +109,7 @@ jmsTemplate.convertAndSend(topic, event, new EventHeaderPostProcessor("order-cre
 
 Unlike Kafka headers, JMS properties are broker-visible: usable in consumer selectors (`selector = "eventType = 'order-created'"`) and shown when browsing queues in the web console. Consumers read them with `@Header("seq")` etc.
 
-## <span style="color:hsl(23,68%,44%)">Quick start</span>
+## <span style="color:hsl(203,80%,58%)">Quick start</span>
 
 Prerequisites: Java 25, Maven, Docker (for the ActiveMQ broker).
 
@@ -141,7 +141,7 @@ DURABLE consumed order-created from=topic://VirtualTopic.orders id=<uuid> orderI
 workerA consumed from=queue://Consumer.workers.VirtualTopic.orders seq=1 orderId=<uuid> thread=...
 ```
 
-## <span style="color:hsl(32,68%,44%)">API</span>
+## <span style="color:hsl(340,80%,58%)">API</span>
 
 The publish endpoint returns `202 Accepted`:
 
@@ -160,7 +160,7 @@ The publish endpoint returns `202 Accepted`:
 
 Invalid payloads get `400`. The server generates `orderId` and the timestamp.
 
-## <span style="color:hsl(41,68%,32%)">Topics vs Queues in ActiveMQ</span>
+## <span style="color:hsl(118,80%,58%)">Topics vs Queues in ActiveMQ</span>
 
 The mental model behind every pattern below:
 
@@ -190,7 +190,7 @@ What this project runs:
 
 So one bulk message is copied **twice** (once per worker queue), and inside each queue exactly one of the 3 consumers receives it. 100 published → 100 in workerA + 100 in workerB → ~33/33/34 per consumer thread.
 
-## <span style="color:hsl(50,68%,32%)">Round-robin demo (virtual topic)</span>
+## <span style="color:hsl(255,80%,58%)">Round-robin demo (virtual topic)</span>
 
 `POST /v1/events/orders/bulk?count=100` publishes a numbered burst of `OrderCreatedEvent`s to the **virtual topic** `VirtualTopic.orders`. The broker copies each message into the shared work queue, where the workerA and workerB listeners (3 competing consumers each) **compete** — the broker hands every message to exactly ONE of them, round-robin:
 
@@ -208,7 +208,7 @@ curl -X POST 'http://localhost:8080/v1/events/orders/bulk?count=100' \
   -d '{"product": "Widget", "quantity": 1, "amount": 9.99}'
 ```
 
-## <span style="color:hsl(59,68%,32%)">Request-reply (JMSReplyTo + JMSCorrelationID)</span>
+## <span style="color:hsl(33,80%,58%)">Request-reply (JMSReplyTo + JMSCorrelationID)</span>
 
 Synchronous question over asynchronous messaging: `POST /v1/orders/quote` asks the consumer to price an order and waits for the answer.
 
@@ -240,7 +240,7 @@ curl -X POST http://localhost:8080/v1/orders/quote \
 # → {"approved":true,"totalPrice":2400.00,"note":"within approval limit"}
 ```
 
-## <span style="color:hsl(68,68%,32%)">Durable topic subscription</span>
+## <span style="color:hsl(170,80%,58%)">Durable topic subscription</span>
 
 Plain topic subscribers miss whatever is published while they're offline. `DurableOrderListener` registers a **durable subscription** on the `VirtualTopic.orders` topic (identity = `clientId` `activemq-consumer` + subscription `orders-durable-sub`) — the broker stores missed events and replays them on reconnect.
 
@@ -261,7 +261,7 @@ Implementation note: a `clientId` must be set before the connection starts, whic
 
 Try it: stop the consumer → `POST /v1/events/orders` a few times → start the consumer → watch `DURABLE consumed ...` catch-up lines; the plain listener stays silent.
 
-## <span style="color:hsl(77,68%,32%)">Message persistence</span>
+## <span style="color:hsl(308,80%,58%)">Message persistence</span>
 
 Queued messages survive a broker restart — two halves make that true:
 
@@ -279,7 +279,7 @@ flowchart LR
 
 Verified live: consumer stopped → 5 events published (5 pending in each worker queue) → `docker restart activemq` → queues still hold 5+5 → consumer started → all delivered, including the durable subscription's 5 stored copies. Note the scope: **queues and durable subscriptions** persist; plain topic subscribers still only get what's published while they're connected.
 
-## <span style="color:hsl(86,68%,32%)">Redelivery + per-queue DLQ</span>
+## <span style="color:hsl(85,80%,58%)">Redelivery + per-queue DLQ</span>
 
 What happens when a listener throws — demonstrated end-to-end:
 
@@ -306,7 +306,7 @@ curl -X POST 'http://localhost:8080/v1/events/orders/bulk?count=10' \
 
 Verified run: 4 `SIMULATED FAILURE seq=10` warnings with exact 0.5s/1s/2s gaps, then `DLQ.Consumer.workerA.VirtualTopic.orders` size 1; workerB's copy processed normally.
 
-## <span style="color:hsl(95,68%,32%)">ActiveMQ broker</span>
+## <span style="color:hsl(223,80%,58%)">ActiveMQ broker</span>
 
 | Thing                 | Value                                               |
 |-----------------------|-----------------------------------------------------|
@@ -320,7 +320,7 @@ Verified run: 4 `SIMULATED FAILURE seq=10` warnings with exact 0.5s/1s/2s gaps, 
 
 Watch the topics in the console under **Topics** — enqueued/dequeued counters move as you publish. Start the consumer first: topic messages are not retained for subscribers that aren't connected. Queues (worker, quote, DLQ) are browsable under **Queues**, message bodies included.
 
-## <span style="color:hsl(104,68%,32%)">Configuration</span>
+## <span style="color:hsl(0,80%,58%)">Configuration</span>
 
 Overridable via env vars (12-factor style):
 
@@ -331,23 +331,23 @@ Overridable via env vars (12-factor style):
 
 Destination names live under `app.topics.*` / `app.queues.*`, worker concurrency under `app.listener.worker-concurrency`, and the DLQ demo switch under `app.listener.fail-seq-multiple` — all in each module's `application.yml`.
 
-## <span style="color:hsl(113,68%,32%)">Insomnia</span>
+## <span style="color:hsl(138,80%,58%)">Insomnia</span>
 
 Import `insomnia-collection.json` — one request per event type, the bulk burst, the quote request-reply, plus health checks for both modules.
 
-## <span style="color:hsl(122,68%,32%)">Observability</span>
+## <span style="color:hsl(275,80%,58%)">Observability</span>
 
 Actuator on both modules: `/actuator/health`, `/actuator/metrics`, `/actuator/prometheus`.
 
 ---
 
-# <span style="color:hsl(131,68%,32%)">ActiveMQ Deep Dive</span>
+# <span style="color:hsl(53,80%,50%)">ActiveMQ Deep Dive</span>
 
 Reference half of this README — everything you need to reason about ActiveMQ Classic, with diagrams. Each section stands alone; skim the diagrams first, read the prose when needed. (See [Table of Contents](#table-of-contents) at the top for the full section list.)
 
 ---
 
-## <span style="color:hsl(140,68%,32%)">1. What is ActiveMQ</span>
+## <span style="color:hsl(190,80%,58%)">1. What is ActiveMQ</span>
 
 ActiveMQ is a **message broker**: a server that sits between applications and moves messages from producers to consumers so the two sides never talk directly. Decoupling in three dimensions:
 
@@ -377,7 +377,7 @@ Two products share the name:
 ActiveMQ implements **JMS** (Jakarta Messaging) — the Java standard API for messaging — so application code depends on `jakarta.jms.*` interfaces, not on ActiveMQ classes. Swap the broker, keep the code.
 
 ---
-## <span style="color:hsl(149,68%,32%)">2. Broker architecture</span>
+## <span style="color:hsl(328,80%,58%)">2. Broker architecture</span>
 
 ```mermaid
 flowchart TB
@@ -422,7 +422,7 @@ Key pieces:
 
 ---
 
-## <span style="color:hsl(158,68%,36%)">3. Destinations: queues</span>
+## <span style="color:hsl(105,80%,58%)">3. Destinations: queues</span>
 
 **Point-to-point.** Each message is delivered to **exactly one** consumer, no matter how many are attached. Undelivered messages wait — minutes or days — until someone consumes or they expire.
 
@@ -445,7 +445,7 @@ Use for: task distribution, order processing, anything where each unit of work m
 
 ---
 
-## <span style="color:hsl(167,68%,36%)">4. Destinations: topics</span>
+## <span style="color:hsl(243,80%,58%)">4. Destinations: topics</span>
 
 **Publish/subscribe.** Each message is delivered to **every** subscriber that is connected at publish time. Subscribers do not compete — they each get a full copy.
 
@@ -483,7 +483,7 @@ flowchart TB
 
 ---
 
-## <span style="color:hsl(176,68%,36%)">5. Anatomy of a message</span>
+## <span style="color:hsl(20,80%,58%)">5. Anatomy of a message</span>
 
 ```mermaid
 flowchart TB
@@ -517,7 +517,7 @@ Details worth knowing:
 
 ---
 
-## <span style="color:hsl(185,68%,36%)">6. Message consumption: prefetch and dispatch</span>
+## <span style="color:hsl(158,80%,58%)">6. Message consumption: prefetch and dispatch</span>
 
 ActiveMQ **pushes** messages to consumers (unlike Kafka's pull). To keep pipelines full, it pushes ahead of consumption — the **prefetch buffer**.
 
@@ -541,7 +541,7 @@ sequenceDiagram
 
 ---
 
-## <span style="color:hsl(194,68%,36%)">7. Acknowledgement modes and transactions</span>
+## <span style="color:hsl(295,80%,58%)">7. Acknowledgement modes and transactions</span>
 
 A message is only *gone* from the broker when acknowledged. Who acks, and when, defines your delivery guarantee:
 
@@ -566,7 +566,7 @@ flowchart TB
 
 ---
 
-## <span style="color:hsl(203,68%,44%)">8. Competing consumers and round-robin</span>
+## <span style="color:hsl(73,80%,58%)">8. Competing consumers and round-robin</span>
 
 The scaling pattern this project demos with the bulk endpoint. N consumers on one queue; the broker distributes messages among them — with equal prefetch and processing speed, effectively **round-robin**.
 
@@ -587,7 +587,7 @@ Measured in this project (100-message burst): threads split 34/33/33 with `seq` 
 
 ---
 
-## <span style="color:hsl(212,68%,44%)">9. Durable subscriptions</span>
+## <span style="color:hsl(210,80%,58%)">9. Durable subscriptions</span>
 
 Plain topic subscribers miss messages published while they're offline. A **durable subscription** makes the broker remember the subscriber and buffer what it missed.
 
@@ -611,7 +611,7 @@ sequenceDiagram
 
 ---
 
-## <span style="color:hsl(221,68%,44%)">10. Virtual topics</span>
+## <span style="color:hsl(348,80%,58%)">10. Virtual topics</span>
 
 The best of both worlds and the core trick of this project's round-robin demo. Publish **once** to a topic; consume from **queues**.
 
@@ -650,7 +650,7 @@ Gotchas:
 
 ---
 
-## <span style="color:hsl(230,68%,44%)">11. Persistence: KahaDB</span>
+## <span style="color:hsl(125,80%,58%)">11. Persistence: KahaDB</span>
 
 Where persistent messages live between arrival and ack. KahaDB is a **write-ahead journal + index**, purpose-built for messaging (append-heavy, delete-on-ack).
 
@@ -680,7 +680,7 @@ flowchart LR
 
 ---
 
-## <span style="color:hsl(239,68%,44%)">12. Redelivery and dead-letter queues</span>
+## <span style="color:hsl(263,80%,58%)">12. Redelivery and dead-letter queues</span>
 
 When a listener throws, the message is redelivered; when it keeps failing, it's parked in a **dead-letter queue** instead of poisoning the consumer forever.
 
@@ -699,7 +699,7 @@ flowchart LR
 
 ---
 
-## <span style="color:hsl(248,68%,44%)">13. Selectors, exclusive consumers, message groups</span>
+## <span style="color:hsl(40,80%,58%)">13. Selectors, exclusive consumers, message groups</span>
 
 Three routing refinements, all consumer-side:
 
@@ -737,7 +737,7 @@ Per-order strict ordering **and** horizontal scaling — same idea as Kafka part
 
 ---
 
-## <span style="color:hsl(257,68%,44%)">14. Scheduled and delayed delivery</span>
+## <span style="color:hsl(178,80%,58%)">14. Scheduled and delayed delivery</span>
 
 Broker-side timer (enable with `schedulerSupport="true"`). Producer stamps delay properties; broker holds the message and enqueues at the right moment.
 
@@ -763,7 +763,7 @@ Use for: retry-with-backoff queues, reminder events, SLA timers. (The console's 
 
 ---
 
-## <span style="color:hsl(266,68%,44%)">15. Memory limits and flow control</span>
+## <span style="color:hsl(315,80%,58%)">15. Memory limits and flow control</span>
 
 The broker protects itself from fast producers + slow consumers with a hierarchy of limits:
 
@@ -785,7 +785,7 @@ flowchart TB
 
 ---
 
-## <span style="color:hsl(275,68%,44%)">16. High availability and networks of brokers</span>
+## <span style="color:hsl(93,80%,58%)">16. High availability and networks of brokers</span>
 
 **Master/slave (shared store)** — the classic HA pair. Both brokers point at the same KahaDB; whoever holds the file lock is master, the other waits. Clients use a failover URL and reconnect automatically.
 
@@ -818,7 +818,7 @@ Rule of thumb: messages flow **toward demand** — a broker only forwards a queu
 
 ---
 
-## <span style="color:hsl(284,68%,44%)">17. Spring Boot integration model</span>
+## <span style="color:hsl(230,80%,58%)">17. Spring Boot integration model</span>
 
 What `spring-boot-starter-activemq` wires for you, and how the pieces in this repo connect:
 
@@ -847,7 +847,7 @@ flowchart TB
 
 ---
 
-## <span style="color:hsl(293,68%,44%)">18. Monitoring: console, JMX, advisory topics</span>
+## <span style="color:hsl(8,80%,58%)">18. Monitoring: console, JMX, advisory topics</span>
 
 **Web console** (`:8161/admin`) — Queues (pending/enqueued/dequeued, browse bodies, purge, move), Topics (counters only), Subscribers (durable subs), Connections, Scheduled, Send (inject test messages by hand).
 
@@ -871,7 +871,7 @@ flowchart LR
 
 ---
 
-## <span style="color:hsl(302,68%,44%)">19. ActiveMQ vs Kafka vs RabbitMQ</span>
+## <span style="color:hsl(145,80%,58%)">19. ActiveMQ vs Kafka vs RabbitMQ</span>
 
 |                        | ActiveMQ Classic                          | Kafka                                                    | RabbitMQ                         |
 |------------------------|-------------------------------------------|----------------------------------------------------------|----------------------------------|
@@ -890,7 +890,7 @@ The virtual-topic pattern in this repo is ActiveMQ speaking Kafka's dialect: `Vi
 
 ---
 
-## <span style="color:hsl(311,68%,44%)">20. How this project maps to all of the above</span>
+## <span style="color:hsl(283,80%,58%)">20. How this project maps to all of the above</span>
 
 | Concept (section)               | Where it lives in this repo                                                                               |
 |---------------------------------|-----------------------------------------------------------------------------------------------------------|
