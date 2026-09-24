@@ -7,7 +7,7 @@
     <parent>
         <groupId>com.org.llm</groupId>
         <artifactId>super-pom</artifactId>
-        <version>1.0.0</version>
+        <version>1.1.0</version>
         <relativePath>../super-pom/pom.xml</relativePath>
     </parent>
 
@@ -25,8 +25,6 @@
     </modules>
 
     <properties>
-        <maven-compiler-plugin.version>3.14.0</maven-compiler-plugin.version>
-        <maven-surefire-plugin.version>3.5.3</maven-surefire-plugin.version>
     </properties>
 
     <dependencies>
@@ -55,12 +53,6 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>${maven-compiler-plugin.version}</version>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <version>${maven-surefire-plugin.version}</version>
             </plugin>
         </plugins>
     </build>

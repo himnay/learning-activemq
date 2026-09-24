@@ -15,9 +15,11 @@ import org.springframework.stereotype.Component;
  * queue (fan-out), and inside a queue the 3 competing consumers (queueListenerFactory
  * concurrency) receive messages round-robin — watch the seq/thread in the log.
  *
- * DLQ demo: with app.listener.fail-seq-multiple > 0, workerA throws for every
- * seq divisible by it — the message is redelivered per RedeliveryConfig's
- * backoff schedule, then dead-lettered to DLQ.Consumer.workerA.VirtualTopic.orders.
+ * DLQ demo: with app.listener.fail-seq-multiple > 0, whichever worker receives a
+ * seq divisible by it throws — the message is redelivered per RedeliveryConfig's
+ * backoff schedule, then dead-lettered to DLQ.Consumer.workers.VirtualTopic.orders.
+ * (Both workers must apply the switch: they share one queue, so round-robin would
+ * otherwise route every even seq to workerB and the demo would never fire.)
  */
 @Slf4j
 @Component
@@ -37,12 +39,7 @@ public class OrderWorkerListeners {
                           @Header(JmsHeaders.DESTINATION) Destination destination) {
         log.info("workerA consumed from={} seq={} orderId={} thread={}",
                 destination, seq, event.orderId(), Thread.currentThread().getName());
-
-        if (failSeqMultiple > 0 && seq != null && seq % failSeqMultiple == 0) {
-            log.warn("workerA SIMULATED FAILURE seq={} — rolling back for redelivery", seq);
-            throw new IllegalStateException("simulated failure for seq=" + seq);
-        }
-
+        failIfPoison("workerA", seq);
     }
 
     /** Handles worker b. */
@@ -53,5 +50,13 @@ public class OrderWorkerListeners {
                           @Header(JmsHeaders.DESTINATION) Destination destination) {
         log.info("workerB consumed from={} seq={} orderId={} thread={}",
                 destination, seq, event.orderId(), Thread.currentThread().getName());
+        failIfPoison("workerB", seq);
+    }
+
+    private void failIfPoison(String worker, Integer seq) {
+        if (failSeqMultiple > 0 && seq != null && seq % failSeqMultiple == 0) {
+            log.warn("{} SIMULATED FAILURE seq={} — rolling back for redelivery", worker, seq);
+            throw new IllegalStateException("simulated failure for seq=" + seq);
+        }
     }
 }

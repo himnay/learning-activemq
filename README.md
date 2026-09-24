@@ -88,7 +88,7 @@ Contracts are OpenAPI 3.1, one spec per module:
 
 Topics are pub/sub (`spring.jms.pub-sub-domain: true` on both sides): every live subscriber gets a copy, and listener concurrency stays at 1 — extra topic consumers would each receive a duplicate.
 
-Every listener also logs the JMS destination it consumed from (`from=topic://VirtualTopic.orders`, `from=queue://Consumer.workerA.VirtualTopic.orders`) via the `jms_destination` header.
+Every listener also logs the JMS destination it consumed from (`from=topic://VirtualTopic.orders`, `from=queue://Consumer.workers.VirtualTopic.orders`) via the `jms_destination` header.
 
 ### <span style="color:hsl(65,80%,50%)">Message properties — the JMS version of Kafka producer headers</span>
 
@@ -184,11 +184,10 @@ What this project runs:
 | Kind           | Destination                                             | Consumers                                       |
 |----------------|---------------------------------------------------------|-------------------------------------------------|
 | Virtual topic  | `VirtualTopic.orders` (publish side only)               | — (broker copies into queues below)             |
-| Queue          | `Consumer.workerA.VirtualTopic.orders`                  | 3 competing consumers (round-robin)             |
-| Queue          | `Consumer.workerB.VirtualTopic.orders`                  | 3 competing consumers (round-robin)             |
+| Queue          | `Consumer.workers.VirtualTopic.orders`                  | workerA + workerB, 3 consumers each — all 6 compete (round-robin) |
 | Queue          | `orders.quote.queue`                                    | 1 quote responder (request-reply)               |
 
-So one bulk message is copied **twice** (once per worker queue), and inside each queue exactly one of the 3 consumers receives it. 100 published → 100 in workerA + 100 in workerB → ~33/33/34 per consumer thread.
+So one bulk message is copied **once** into the shared worker queue, and exactly one of the 6 consumers receives it. 100 published → ~50 workerA + ~50 workerB. (Separate `Consumer.workerA.*` / `Consumer.workerB.*` queues would instead give each group its own copy — see §10.)
 
 ## <span style="color:hsl(255,80%,58%)">Round-robin demo (virtual topic)</span>
 
@@ -285,15 +284,15 @@ What happens when a listener throws — demonstrated end-to-end:
 
 ```mermaid
 flowchart LR
-    q[["Consumer.workerA.<br/>VirtualTopic.orders"]] --> l[workerA listener]
+    q[["Consumer.workers.<br/>VirtualTopic.orders"]] --> l[workerA / workerB listener]
     l -->|"seq % fail-seq-multiple == 0<br/>throws"| rb["rollback (transacted session)"]
     rb -->|"redeliver after 0.5s, 1s, 2s"| q
-    rb -->|"4th failure"| dlq[["DLQ.Consumer.workerA.<br/>VirtualTopic.orders"]]
+    rb -->|"4th failure"| dlq[["DLQ.Consumer.workers.<br/>VirtualTopic.orders"]]
 ```
 
 - **Client-side redelivery policy** (`RedeliveryConfig`): 3 redeliveries, initial delay 500ms, exponential backoff ×2 → attempts at ~0s, 0.5s, 1s, 2s. Boot's listener sessions are transacted, so an exception rolls the message back.
 - **Broker-side per-queue DLQ** (`broker/activemq.xml`, mounted by docker-compose): `individualDeadLetterStrategy` with prefix `DLQ.` — poison messages land in `DLQ.<original-queue>` instead of the shared `ActiveMQ.DLQ`, so failures stay attributable. Browsable in the console under Queues.
-- **Failing-listener demo**: set `app.listener.fail-seq-multiple` (default 0 = off) and workerA throws for every divisible `seq`:
+- **Failing-listener demo**: set `app.listener.fail-seq-multiple` (default 0 = off) and whichever worker receives a divisible `seq` throws (both must — with a shared queue, round-robin sends every even seq to workerB):
 
 ```bash
 # run consumer with the poison switch on
@@ -304,7 +303,7 @@ curl -X POST 'http://localhost:8080/v1/events/orders/bulk?count=10' \
   -H "Content-Type: application/json" -d '{"product": "Widget", "quantity": 1, "amount": 9.99}'
 ```
 
-Verified run: 4 `SIMULATED FAILURE seq=10` warnings with exact 0.5s/1s/2s gaps, then `DLQ.Consumer.workerA.VirtualTopic.orders` size 1; workerB's copy processed normally.
+Verified run (ActiveMQ 6.2.0, Sep 2026): 4 `SIMULATED FAILURE seq=10` warnings with 0.5s/1s/2s gaps, then `DLQ.Consumer.workers.VirtualTopic.orders` size 1; seqs 1–9 processed normally.
 
 ## <span style="color:hsl(223,80%,58%)">ActiveMQ broker</span>
 
@@ -313,7 +312,7 @@ Verified run: 4 `SIMULATED FAILURE seq=10` warnings with exact 0.5s/1s/2s gaps, 
 | Broker (OpenWire/JMS) | `tcp://localhost:61616`                             |
 | Web console           | <http://localhost:8161/admin/> — `admin` / `admin`  |
 | Topic                 | `VirtualTopic.orders`                               |
-| Image                 | `apache/activemq-classic:6.1.7`                     |
+| Image                 | `apache/activemq-classic:6.2.0` (as of 2026)        |
 | Broker config         | `broker/activemq.xml` (per-queue DLQ strategy)      |
 
 ![messaging-broker-gui.png](images/messaging-broker-gui.png)
@@ -897,9 +896,9 @@ The virtual-topic pattern in this repo is ActiveMQ speaking Kafka's dialect: `Vi
 | Plain topic subscribers (§4)    | direct subscribers on `VirtualTopic.orders`: `OrderCreatedEventListeners` + `DurableOrderListener`                         |
 | Typed messages, properties (§5) | `_event` type id, `messageId`, `seq` properties; JSON `TextMessage`                                       |
 | Push + prefetch (§6)            | defaults; visible in even 34/33/33 spread                                                                 |
-| Auto-ack / redelivery (§7)      | Spring default `AUTO_ACKNOWLEDGE`; throw in a listener to watch redelivery → `ActiveMQ.DLQ`               |
+| Auto-ack / redelivery (§7)      | Spring default `AUTO_ACKNOWLEDGE`; throw in a listener to watch redelivery → `DLQ.<queue>`                |
 | Competing consumers (§8)        | `queueListenerFactory` concurrency 3-3                                                                    |
-| Virtual topics (§10)            | `VirtualTopic.orders` → `Consumer.workerA/workerB.VirtualTopic.orders`; bulk endpoint                     |
+| Virtual topics (§10)            | `VirtualTopic.orders` → `Consumer.workers.VirtualTopic.orders` (shared, competing); bulk endpoint        |
 | KahaDB (§11)                    | `activemq-data` docker volume                                                                             |
 | Console (§18)                   | compose port 8161; worker queues browsable                                                                |
 | Spring wiring (§17)             | `JmsEventConverterConfig` (common), `QueueListenerConfig` (consumer), `EventPublisherService` (publisher) |
