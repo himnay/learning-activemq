@@ -1,6 +1,6 @@
 # <span style="color:hsl(320,80%,58%)">learning-activemq</span>
 
-Spring Boot + ActiveMQ Classic learning project — event-driven style. A REST API publishes a typed `OrderCreatedEvent` as JSON (Jackson message converter with type-id mappings, shared records in a common module); a standalone consumer subscribes with `@JmsListener`s. Around that one event the project demonstrates the classic messaging patterns: plain pub/sub, virtual-topic round-robin, request-reply, durable subscriptions, and redelivery with per-queue DLQs.
+Spring Boot + ActiveMQ Classic learning project — event-driven style. A REST API publishes a typed `OrderCreatedEvent` as JSON (Jackson message converter with type-id mappings, shared records in a common module); a standalone consumer subscribes with [`@JmsListener`][JmsListener]s. Around that one event the project demonstrates the classic messaging patterns: plain pub/sub, virtual-topic round-robin, request-reply, durable subscriptions, and redelivery with per-queue DLQs.
 
 ## <span style="color:hsl(98,80%,58%)">Table of Contents</span>
 
@@ -64,11 +64,11 @@ flowchart LR
 
 ## <span style="color:hsl(150,80%,58%)">Modules</span>
 
-| Module                | Port | What it does                                                                                    |
-|-----------------------|------|-------------------------------------------------------------------------------------------------|
-| `activemq-common`     | —    | Shared library: the event records + `JmsEventConverterConfig` (JSON converter)                  |
-| `activemq-publisher`  | 8080 | REST API (`POST /v1/events/*`) → builds an event, publishes it to its topic, stamps `messageId` |
-| `activemq-consumer`   | 8081 | `@JmsListener`s — topic listeners, virtual-topic workers, quote responder                       |
+| Module               | Port | What it does                                                                                    |
+|----------------------|------|-------------------------------------------------------------------------------------------------|
+| `activemq-common`    | —    | Shared library: the event records + `JmsEventConverterConfig` (JSON converter)                  |
+| `activemq-publisher` | 8080 | REST API (`POST /v1/events/*`) → builds an event, publishes it to its topic, stamps `messageId` |
+| `activemq-consumer`  | 8081 | [`@JmsListener`][JmsListener]s — topic listeners, virtual-topic workers, quote responder        |
 
 All modules inherit from the root POM (shared: `spring-boot-starter-activemq`, actuator, Lombok, test) which inherits from `super-pom` (Spring Boot parent, Java toolchain, BOM).
 
@@ -79,7 +79,7 @@ All modules inherit from the root POM (shared: `spring-boot-starter-activemq`, a
 | `OrderCreatedEvent`       | `VirtualTopic.orders`                  | orderId, product, quantity, amount, createdAt                                   |
 | `OrderQuoteRequest/Reply` | `orders.quote.queue`                   | request-reply pair (see [pattern](#request-reply-jmsreplyto--jmscorrelationid)) |
 
-Serialization: `JacksonJsonMessageConverter` writes JSON text messages and sets an `_event` type-id header (`order-created`, `order-quote-request`, `order-quote-reply`). The consumer maps that header back to its event class — both sides share the records via `activemq-common`, and the type-id (not the class name) travels on the wire.
+Serialization: [`JacksonJsonMessageConverter`][JacksonJsonMessageConverter] writes JSON text messages and sets an `_event` type-id header (`order-created`, `order-quote-request`, `order-quote-reply`). The consumer maps that header back to its event class — both sides share the records via `activemq-common`, and the type-id (not the class name) travels on the wire.
 
 Contracts are OpenAPI 3.1, one spec per module:
 
@@ -92,7 +92,7 @@ Every listener also logs the JMS destination it consumed from (`from=topic://Vir
 
 ### <span style="color:hsl(65,80%,50%)">Message properties — the JMS version of Kafka producer headers</span>
 
-`EventHeaderPostProcessor` (a `MessagePostProcessor`) runs after the converter builds the message and stamps metadata as **JMS properties**, keeping it out of the JSON body:
+`EventHeaderPostProcessor` (a [`MessagePostProcessor`][MessagePostProcessor]) runs after the converter builds the message and stamps metadata as **JMS properties**, keeping it out of the JSON body:
 
 ```java
 jmsTemplate.convertAndSend(topic, event, new EventHeaderPostProcessor("order-created", messageId));
@@ -107,7 +107,7 @@ jmsTemplate.convertAndSend(topic, event, new EventHeaderPostProcessor("order-cre
 | `seq` (bulk only)    | `42`                 | header                          |
 | `_event`             | set by converter     | — (type id for deserialization) |
 
-Unlike Kafka headers, JMS properties are broker-visible: usable in consumer selectors (`selector = "eventType = 'order-created'"`) and shown when browsing queues in the web console. Consumers read them with `@Header("seq")` etc.
+Unlike Kafka headers, JMS properties are broker-visible: usable in consumer selectors (`selector = "eventType = 'order-created'"`) and shown when browsing queues in the web console. Consumers read them with [`@Header("seq")`][Header] etc.
 
 ## <span style="color:hsl(203,80%,58%)">Quick start</span>
 
@@ -228,8 +228,8 @@ sequenceDiagram
 
 How the pieces work:
 
-- **Publisher** — `queueJmsTemplate.sendAndReceive(...)` creates a **temporary reply queue**, stamps it as `JMSReplyTo` plus a `JMSCorrelationID`, sends, and blocks (5s timeout → `504`). Queue semantics required, so a second, non-primary `JmsTemplate` bean exists just for this (`QueueJmsConfig`).
-- **Consumer** — `QuoteRequestListener` simply **returns** `OrderQuoteReply` from the `@JmsListener` method; Spring sends it to the request's `JMSReplyTo` and copies the correlation ID. No manual reply plumbing.
+- **Publisher** — `queueJmsTemplate.sendAndReceive(...)` creates a **temporary reply queue**, stamps it as `JMSReplyTo` plus a `JMSCorrelationID`, sends, and blocks (5s timeout → `504`). Queue semantics required, so a second, non-primary [`JmsTemplate`][JmsTemplate] bean exists just for this (`QueueJmsConfig`).
+- **Consumer** — `QuoteRequestListener` simply **returns** `OrderQuoteReply` from the [`@JmsListener`][JmsListener] method; Spring sends it to the request's `JMSReplyTo` and copies the correlation ID. No manual reply plumbing.
 - Business rule for the demo: `total = unitPrice × quantity`, approved while ≤ 5000.
 
 ```bash
@@ -256,7 +256,7 @@ sequenceDiagram
     B-->>D: replays all 3 (plain subscriber gets nothing)
 ```
 
-Implementation note: a `clientId` must be set before the connection starts, which Boot's shared `CachingConnectionFactory` forbids — so `durableTopicListenerFactory` builds its own private connection factory (deliberately not a Spring bean; a second `ConnectionFactory` bean would switch off Boot's auto-configuration).
+Implementation note: a `clientId` must be set before the connection starts, which Boot's shared [`CachingConnectionFactory`][CachingConnectionFactory] forbids — so `durableTopicListenerFactory` builds its own private connection factory (deliberately not a Spring bean; a second [`ConnectionFactory`][ConnectionFactory] bean would switch off Boot's auto-configuration).
 
 Try it: stop the consumer → `POST /v1/events/orders` a few times → start the consumer → watch `DURABLE consumed ...` catch-up lines; the plain listener stays silent.
 
@@ -264,7 +264,7 @@ Try it: stop the consumer → `POST /v1/events/orders` a few times → start the
 
 Queued messages survive a broker restart — two halves make that true:
 
-- **Producer side** — both `JmsTemplate`s send with `DeliveryMode.PERSISTENT` (`setExplicitQosEnabled(true)` + `setDeliveryPersistent(true)` in `QueueJmsConfig`): the broker writes each message to its KahaDB journal *before* acknowledging the send.
+- **Producer side** — both [`JmsTemplate`][JmsTemplate]s send with [`DeliveryMode.PERSISTENT`][DeliveryMode] (`setExplicitQosEnabled(true)` + `setDeliveryPersistent(true)` in `QueueJmsConfig`): the broker writes each message to its KahaDB journal *before* acknowledging the send.
 - **Broker side** — docker-compose mounts the `activemq-data` volume over `/opt/apache-activemq/data`, which holds KahaDB. `docker restart` (or a crash) keeps the journal.
 
 ```mermaid
@@ -437,7 +437,7 @@ Properties:
 
 - **Retention** — messages stay until consumed, expired (TTL), or purged. A queue is a buffer.
 - **Competing consumers** — multiple consumers on one queue split the messages (see §8). This is *the* horizontal-scaling primitive for work processing.
-- **Browsable** — you can look at pending messages (web console → Queues → click message; or JMS `QueueBrowser`) without consuming them.
+- **Browsable** — you can look at pending messages (web console → Queues → click message; or JMS [`QueueBrowser`][QueueBrowser]) without consuming them.
 - **Ordering** — FIFO as enqueued, but competing consumers can complete out of order. Strict ordering needs a single consumer or message groups (§13).
 
 Use for: task distribution, order processing, anything where each unit of work must be handled once.
@@ -838,9 +838,9 @@ flowchart TB
     broker --> cf2
 ```
 
-- **`ConnectionFactory`** — auto-configured from `spring.activemq.*` properties. Production tip: wrap in a pooled factory (`spring.activemq.pool.enabled=true` with the pooled-jms dependency) — creating raw connections per send is expensive.
-- **`JmsTemplate`** — thread-safe sender; `convertAndSend(dest, obj, postProcessor)` runs the object through the `MessageConverter` bean and lets the post-processor stamp properties (our `messageId`, `seq`).
-- **`@JmsListener`** — each annotation gets a listener container from a factory. The container owns sessions/consumers (concurrency), invokes your method, acks on normal return, triggers redelivery on exception. Two factories in this project: default (topic mode, concurrency 1) and `queueListenerFactory` (queue mode, concurrency 3).
+- **[`ConnectionFactory`][ConnectionFactory]** — auto-configured from `spring.activemq.*` properties. Production tip: wrap in a pooled factory (`spring.activemq.pool.enabled=true` with the pooled-jms dependency) — creating raw connections per send is expensive.
+- **[`JmsTemplate`][JmsTemplate]** — thread-safe sender; `convertAndSend(dest, obj, postProcessor)` runs the object through the [`MessageConverter`][MessageConverter] bean and lets the post-processor stamp properties (our `messageId`, `seq`).
+- **[`@JmsListener`][JmsListener]** — each annotation gets a listener container from a factory. The container owns sessions/consumers (concurrency), invokes your method, acks on normal return, triggers redelivery on exception. Two factories in this project: default (topic mode, concurrency 1) and `queueListenerFactory` (queue mode, concurrency 3).
 - **`MessageConverter`** — single bean shared by both directions; the `_event` type-id property maps records without leaking Java class names into the wire format.
 - **`pub-sub-domain`** — the yml switch that decides whether unadorned destinations mean topics or queues; a container factory can override it (exactly what `queueListenerFactory` does).
 
@@ -894,7 +894,7 @@ The virtual-topic pattern in this repo is ActiveMQ speaking Kafka's dialect: `Vi
 | Concept (section)               | Where it lives in this repo                                                                               |
 |---------------------------------|-----------------------------------------------------------------------------------------------------------|
 | Plain topic subscribers (§4)    | direct subscribers on `VirtualTopic.orders`: `OrderCreatedEventListeners` + `DurableOrderListener`                         |
-| Typed messages, properties (§5) | `_event` type id, `messageId`, `seq` properties; JSON `TextMessage`                                       |
+| Typed messages, properties (§5) | `_event` type id, `messageId`, `seq` properties; JSON [`TextMessage`][TextMessage]                                       |
 | Push + prefetch (§6)            | defaults; visible in even 34/33/33 spread                                                                 |
 | Auto-ack / redelivery (§7)      | Spring default `AUTO_ACKNOWLEDGE`; throw in a listener to watch redelivery → `DLQ.<queue>`                |
 | Competing consumers (§8)        | `queueListenerFactory` concurrency 3-3                                                                    |
@@ -910,3 +910,17 @@ Experiments to try next, ordered by effort:
 3. Stamp `JMSXGroupID = orderId` in the bulk publisher → per-order stickiness across the 3 consumers (§13).
 4. Add `AMQ_SCHEDULED_DELAY` to one event (enable `schedulerSupport`) → delayed consumption (§14).
 5. Stop the consumer, publish a burst, check console: worker queues hold messages (retention), plain topics dropped theirs (§3 vs §4).
+
+<!-- Library classes mentioned above, linked to their source at the versions this project builds with. -->
+
+[CachingConnectionFactory]: https://github.com/spring-projects/spring-framework/blob/v7.0.9/spring-jms/src/main/java/org/springframework/jms/connection/CachingConnectionFactory.java
+[ConnectionFactory]: https://github.com/jakartaee/messaging/blob/3.1.0-RELEASE/api/src/main/java/jakarta/jms/ConnectionFactory.java
+[DeliveryMode]: https://github.com/jakartaee/messaging/blob/3.1.0-RELEASE/api/src/main/java/jakarta/jms/DeliveryMode.java
+[Header]: https://github.com/spring-projects/spring-framework/blob/v7.0.9/spring-messaging/src/main/java/org/springframework/messaging/handler/annotation/Header.java
+[JacksonJsonMessageConverter]: https://github.com/spring-projects/spring-framework/blob/v7.0.9/spring-jms/src/main/java/org/springframework/jms/support/converter/JacksonJsonMessageConverter.java
+[JmsListener]: https://github.com/spring-projects/spring-framework/blob/v7.0.9/spring-jms/src/main/java/org/springframework/jms/annotation/JmsListener.java
+[JmsTemplate]: https://github.com/spring-projects/spring-framework/blob/v7.0.9/spring-jms/src/main/java/org/springframework/jms/core/JmsTemplate.java
+[MessageConverter]: https://github.com/spring-projects/spring-framework/blob/v7.0.9/spring-jms/src/main/java/org/springframework/jms/support/converter/MessageConverter.java
+[MessagePostProcessor]: https://github.com/spring-projects/spring-framework/blob/v7.0.9/spring-jms/src/main/java/org/springframework/jms/core/MessagePostProcessor.java
+[QueueBrowser]: https://github.com/jakartaee/messaging/blob/3.1.0-RELEASE/api/src/main/java/jakarta/jms/QueueBrowser.java
+[TextMessage]: https://github.com/jakartaee/messaging/blob/3.1.0-RELEASE/api/src/main/java/jakarta/jms/TextMessage.java
