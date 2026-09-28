@@ -15,10 +15,11 @@ Spring Boot + ActiveMQ Classic learning project — event-driven style. A REST A
 7. 🔁 [Pattern: round-robin over a virtual topic](#round-robin-demo-virtual-topic)
 8. 🤝 [Pattern: request-reply](#request-reply-jmsreplyto--jmscorrelationid)
 9. 📌 [Pattern: durable topic subscription](#durable-topic-subscription)
-10. ☠️ [Pattern: redelivery + per-queue DLQ](#redelivery--per-queue-dlq)
-11. 🖥️ [The broker: console & config](#activemq-broker)
-12. ⚙️ [Configuration](#configuration)
-13. 🤝 [Insomnia](#insomnia) · 📊 [Observability](#observability)
+10. 💾 [Message persistence](#message-persistence)
+11. ☠️ [Pattern: redelivery + per-queue DLQ](#redelivery--per-queue-dlq)
+12. 🖥️ [The broker: console & config](#activemq-broker)
+13. ⚙️ [Configuration](#configuration)
+14. 🤝 [Insomnia](#insomnia) · 📊 [Observability](#observability)
 
 **Part 2 — [ActiveMQ Deep Dive](#activemq-deep-dive)**
 
@@ -45,7 +46,8 @@ Spring Boot + ActiveMQ Classic learning project — event-driven style. A REST A
 
 ---
 
-## <span style="color:hsl(235,80%,58%)">Architecture</span>
+<a id="architecture"></a>
+## <span style="color:hsl(235,80%,58%)">1. 🏗️ Architecture</span>
 
 ```mermaid
 flowchart LR
@@ -58,11 +60,13 @@ flowchart LR
     qq <--> con
 ```
 
-## <span style="color:hsl(13,80%,58%)">Types</span>
+<a id="types"></a>
+## <span style="color:hsl(13,80%,58%)">🧩 Types</span>
 
 ![messaging-broker-types.png](images/messaging-broker-types.png)
 
-## <span style="color:hsl(150,80%,58%)">Modules</span>
+<a id="modules"></a>
+## <span style="color:hsl(150,80%,58%)">2. 📦 Modules</span>
 
 | Module               | Port | What it does                                                                                    |
 |----------------------|------|-------------------------------------------------------------------------------------------------|
@@ -70,9 +74,10 @@ flowchart LR
 | `activemq-publisher` | 8080 | REST API (`POST /v1/events/*`) → builds an event, publishes it to its topic, stamps `messageId` |
 | `activemq-consumer`  | 8081 | [`@JmsListener`][JmsListener]s — topic listeners, virtual-topic workers, quote responder        |
 
-All modules inherit from the root POM (shared: `spring-boot-starter-activemq`, actuator, Lombok, test) which inherits from `super-pom` (Spring Boot parent, Java toolchain, BOM).
+All modules inherit from the root POM (shared: `spring-boot-starter-activemq`, actuator, Lombok, test) which inherits from `super-pom` (Spring Boot 4.1 parent, Java 27, BOM).
 
-## <span style="color:hsl(288,80%,58%)">Events & serialization</span>
+<a id="events--serialization"></a>
+## <span style="color:hsl(288,80%,58%)">3. ✉️ Events & serialization</span>
 
 | Event                     | Destination                            | Fields                                                                          |
 |---------------------------|----------------------------------------|---------------------------------------------------------------------------------|
@@ -109,7 +114,8 @@ jmsTemplate.convertAndSend(topic, event, new EventHeaderPostProcessor("order-cre
 
 Unlike Kafka headers, JMS properties are broker-visible: usable in consumer selectors (`selector = "eventType = 'order-created'"`) and shown when browsing queues in the web console. Consumers read them with [`@Header("seq")`][Header] etc.
 
-## <span style="color:hsl(203,80%,58%)">Quick start</span>
+<a id="quick-start"></a>
+## <span style="color:hsl(203,80%,58%)">4. 🚀 Quick start</span>
 
 Prerequisites: Java 27, Maven, Docker (for the ActiveMQ broker).
 
@@ -141,7 +147,8 @@ DURABLE consumed order-created from=topic://VirtualTopic.orders id=<uuid> orderI
 workerA consumed from=queue://Consumer.workers.VirtualTopic.orders seq=1 orderId=<uuid> thread=...
 ```
 
-## <span style="color:hsl(340,80%,58%)">API</span>
+<a id="api"></a>
+## <span style="color:hsl(340,80%,58%)">5. 🌐 API</span>
 
 The publish endpoint returns `202 Accepted`:
 
@@ -160,7 +167,8 @@ The publish endpoint returns `202 Accepted`:
 
 Invalid payloads get `400`. The server generates `orderId` and the timestamp.
 
-## <span style="color:hsl(118,80%,58%)">Topics vs Queues in ActiveMQ</span>
+<a id="topics-vs-queues-in-activemq"></a>
+## <span style="color:hsl(118,80%,58%)">6. 🧠 Topics vs Queues in ActiveMQ</span>
 
 The mental model behind every pattern below:
 
@@ -189,7 +197,8 @@ What this project runs:
 
 So one bulk message is copied **once** into the shared worker queue, and exactly one of the 6 consumers receives it. 100 published → ~50 workerA + ~50 workerB. (Separate `Consumer.workerA.*` / `Consumer.workerB.*` queues would instead give each group its own copy — see §10.)
 
-## <span style="color:hsl(255,80%,58%)">Round-robin demo (virtual topic)</span>
+<a id="round-robin-demo-virtual-topic"></a>
+## <span style="color:hsl(255,80%,58%)">7. 🔁 Round-robin demo (virtual topic)</span>
 
 `POST /v1/events/orders/bulk?count=100` publishes a numbered burst of `OrderCreatedEvent`s to the **virtual topic** `VirtualTopic.orders`. The broker copies each message into the shared work queue, where the workerA and workerB listeners (3 competing consumers each) **compete** — the broker hands every message to exactly ONE of them, round-robin:
 
@@ -197,7 +206,7 @@ So one bulk message is copied **once** into the shared worker queue, and exactly
 publisher ──▶ VirtualTopic.orders ──▶ Consumer.workers.VirtualTopic.orders ──▶ workerA | workerB (one wins per message, ~50/50)
 ```
 
-- **Load balancing**: verified split — 20 published → workerA 10, workerB 10, alternating (`seq 1→A, 2→B, 3→A…`). Round-robin only happens between consumers of the *same* queue.
+- **Load balancing**: the broker deals the queue's messages round-robin over all six consumers, and each listener's three consumers subscribed one after the other, so seqs arrive in runs of three per worker. Verified run, 20 published: `1–3 → workerB, 4–6 → workerA, 7–9 → workerB…`, 9 for workerA and 11 for workerB. Round-robin only happens between consumers of the *same* queue.
 - **Want group fan-out instead** (each worker gets every message, Kafka consumer-group style)? Give each listener its own queue name in `app.queues.*` — e.g. `Consumer.workerA.VirtualTopic.orders` and `Consumer.workerB.VirtualTopic.orders`; the broker then copies each message into both.
 - Virtual-topic queues are real queues — browsable in the web console under **Queues**, unlike plain topics.
 
@@ -207,7 +216,8 @@ curl -X POST 'http://localhost:8080/v1/events/orders/bulk?count=100' \
   -d '{"product": "Widget", "quantity": 1, "amount": 9.99}'
 ```
 
-## <span style="color:hsl(33,80%,58%)">Request-reply (JMSReplyTo + JMSCorrelationID)</span>
+<a id="request-reply-jmsreplyto--jmscorrelationid"></a>
+## <span style="color:hsl(33,80%,58%)">8. 🤝 Request-reply (JMSReplyTo + JMSCorrelationID)</span>
 
 Synchronous question over asynchronous messaging: `POST /v1/orders/quote` asks the consumer to price an order and waits for the answer.
 
@@ -230,6 +240,7 @@ How the pieces work:
 
 - **Publisher** — `queueJmsTemplate.sendAndReceive(...)` creates a **temporary reply queue**, stamps it as `JMSReplyTo` plus a `JMSCorrelationID`, sends, and blocks (5s timeout → `504`). Queue semantics required, so a second, non-primary [`JmsTemplate`][JmsTemplate] bean exists just for this (`QueueJmsConfig`).
 - **Consumer** — `QuoteRequestListener` simply **returns** `OrderQuoteReply` from the [`@JmsListener`][JmsListener] method; Spring sends it to the request's `JMSReplyTo` and copies the correlation ID. No manual reply plumbing.
+- **Expiry** — the request is sent with a time-to-live equal to the 5s wait (`QueueJmsConfig.REQUEST_TIMEOUT_MS`). A request nobody answered in time expires on the queue (the broker dead-letters it to `DLQ.orders.quote.queue`). Without the TTL it waits for the next responder, whose reply then goes to a temporary queue the publisher has already deleted. Verified: consumer down → `504`; consumer restarted → the stale request is never handled.
 - Business rule for the demo: `total = unitPrice × quantity`, approved while ≤ 5000.
 
 ```bash
@@ -239,7 +250,8 @@ curl -X POST http://localhost:8080/v1/orders/quote \
 # → {"approved":true,"totalPrice":2400.00,"note":"within approval limit"}
 ```
 
-## <span style="color:hsl(170,80%,58%)">Durable topic subscription</span>
+<a id="durable-topic-subscription"></a>
+## <span style="color:hsl(170,80%,58%)">9. 📌 Durable topic subscription</span>
 
 Plain topic subscribers miss whatever is published while they're offline. `DurableOrderListener` registers a **durable subscription** on the `VirtualTopic.orders` topic (identity = `clientId` `activemq-consumer` + subscription `orders-durable-sub`) — the broker stores missed events and replays them on reconnect.
 
@@ -256,11 +268,12 @@ sequenceDiagram
     B-->>D: replays all 3 (plain subscriber gets nothing)
 ```
 
-Implementation note: a `clientId` must be set before the connection starts, which Boot's shared [`CachingConnectionFactory`][CachingConnectionFactory] forbids — so `durableTopicListenerFactory` builds its own private connection factory (deliberately not a Spring bean; a second [`ConnectionFactory`][ConnectionFactory] bean would switch off Boot's auto-configuration).
+Implementation note: a `clientId` must be set before the connection starts, which Boot's shared [`CachingConnectionFactory`][CachingConnectionFactory] forbids — so `durableTopicListenerFactory` builds its own private connection factory (deliberately not a Spring bean; a second [`ConnectionFactory`][ConnectionFactory] bean would switch off Boot's auto-configuration). Because Boot doesn't manage that factory, the method applies Boot's connection details and the `RedeliveryConfig` customizer to it itself. The listener container then sets the `clientId` on the one connection it opens, and closes it on shutdown.
 
-Try it: stop the consumer → `POST /v1/events/orders` a few times → start the consumer → watch `DURABLE consumed ...` catch-up lines; the plain listener stays silent.
+Try it: stop the consumer → `POST /v1/events/orders/bulk?count=3` → start the consumer → watch 3 `DURABLE consumed ...` catch-up lines; the plain listener stays silent (verified on ActiveMQ 6.3.2).
 
-## <span style="color:hsl(308,80%,58%)">Message persistence</span>
+<a id="message-persistence"></a>
+## <span style="color:hsl(308,80%,58%)">10. 💾 Message persistence</span>
 
 Queued messages survive a broker restart — two halves make that true:
 
@@ -278,7 +291,8 @@ flowchart LR
 
 Verified live: consumer stopped → 5 events published (5 pending in each worker queue) → `docker restart activemq` → queues still hold 5+5 → consumer started → all delivered, including the durable subscription's 5 stored copies. Note the scope: **queues and durable subscriptions** persist; plain topic subscribers still only get what's published while they're connected.
 
-## <span style="color:hsl(85,80%,58%)">Redelivery + per-queue DLQ</span>
+<a id="redelivery--per-queue-dlq"></a>
+## <span style="color:hsl(85,80%,58%)">11. ☠️ Redelivery + per-queue DLQ</span>
 
 What happens when a listener throws — demonstrated end-to-end:
 
@@ -303,23 +317,37 @@ curl -X POST 'http://localhost:8080/v1/events/orders/bulk?count=10' \
   -H "Content-Type: application/json" -d '{"product": "Widget", "quantity": 1, "amount": 9.99}'
 ```
 
-Verified run (ActiveMQ 6.2.0, Sep 2026): 4 `SIMULATED FAILURE seq=10` warnings with 0.5s/1s/2s gaps, then `DLQ.Consumer.workers.VirtualTopic.orders` size 1; seqs 1–9 processed normally.
+Verified run (ActiveMQ 6.3.2, Sep 2026, `count=20` with the switch at 10): seq 10 and seq 20 each fail 4 times, at 0s, 0.5s, 1s and 2s, then `DLQ.Consumer.workers.VirtualTopic.orders` holds 2; the other 18 are processed normally.
 
-## <span style="color:hsl(223,80%,58%)">ActiveMQ broker</span>
+<a id="activemq-broker"></a>
+## <span style="color:hsl(223,80%,58%)">12. 🖥️ ActiveMQ broker</span>
 
-| Thing                 | Value                                               |
-|-----------------------|-----------------------------------------------------|
-| Broker (OpenWire/JMS) | `tcp://localhost:61616`                             |
-| Web console           | <http://localhost:8161/admin/> — `admin` / `admin`  |
-| Topic                 | `VirtualTopic.orders`                               |
-| Image                 | `apache/activemq-classic:6.2.0` (as of 2026)        |
-| Broker config         | `broker/activemq.xml` (per-queue DLQ strategy)      |
+| Thing                 | Value                                                                                |
+|-----------------------|--------------------------------------------------------------------------------------|
+| Broker (OpenWire/JMS) | `tcp://localhost:61616` — user `admin` / `admin`                                     |
+| Web console           | <http://localhost:8161/admin/> — `admin` / `admin`                                   |
+| Topic                 | `VirtualTopic.orders`                                                                |
+| Image                 | `apache/activemq:6.3.2` (latest stable as of Sep 2026)                               |
+| Broker config         | `broker/activemq.xml` (per-queue DLQ strategy, client authentication)                |
+| Console access        | `broker/jetty-security.xml` (admits requests arriving through Docker's port mapping) |
 
 ![messaging-broker-gui.png](images/messaging-broker-gui.png)
 
+What the compose file sets up around the 6.3 image:
+
+<ul>
+
+- **Image name** — ActiveMQ Classic images are published as `apache/activemq` now; `apache/activemq-classic` stopped at 6.2.0.
+- **Authentication** — the broker rejects wrong credentials ([`JMSSecurityException`][JMSSecurityException]). The image's entrypoint would add an authentication plugin to `conf/activemq.xml` itself, but it can't edit a bind-mounted file, so `broker/activemq.xml` declares the plugin. It reads the `ACTIVEMQ_CONNECTION_USER` / `ACTIVEMQ_CONNECTION_PASSWORD` values the entrypoint writes to `credentials.properties`.
+- **Data volume owner** — 6.3 runs as the non-root user `activemq`. On a volume written by an older root-run image it can't open the KahaDB lock and waits forever in "slave mode", so the one-shot `activemq-data-owner` service `chown`s the volume before the broker starts.
+- **Console access** — 6.3's console only admits `127.0.0.1`, and requests through Docker's port mapping come from the Docker gateway, so they got `403`. `broker/jetty-security.xml` admits the private ranges too, and both ports are published on `127.0.0.1` only.
+
+</ul>
+
 Watch the topics in the console under **Topics** — enqueued/dequeued counters move as you publish. Start the consumer first: topic messages are not retained for subscribers that aren't connected. Queues (worker, quote, DLQ) are browsable under **Queues**, message bodies included.
 
-## <span style="color:hsl(0,80%,58%)">Configuration</span>
+<a id="configuration"></a>
+## <span style="color:hsl(0,80%,58%)">13. ⚙️ Configuration</span>
 
 Overridable via env vars (12-factor style):
 
@@ -330,23 +358,27 @@ Overridable via env vars (12-factor style):
 
 Destination names live under `app.topics.*` / `app.queues.*`, worker concurrency under `app.listener.worker-concurrency`, and the DLQ demo switch under `app.listener.fail-seq-multiple` — all in each module's `application.yml`.
 
-## <span style="color:hsl(138,80%,58%)">Insomnia</span>
+<a id="insomnia"></a>
+## <span style="color:hsl(138,80%,58%)">14. 🤝 Insomnia</span>
 
 Import `insomnia-collection.json` — one request per event type, the bulk burst, the quote request-reply, plus health checks for both modules.
 
-## <span style="color:hsl(275,80%,58%)">Observability</span>
+<a id="observability"></a>
+## <span style="color:hsl(275,80%,58%)">📊 Observability</span>
 
 Actuator on both modules: `/actuator/health`, `/actuator/metrics`, `/actuator/prometheus`.
 
 ---
 
+<a id="activemq-deep-dive"></a>
 # <span style="color:hsl(53,80%,50%)">ActiveMQ Deep Dive</span>
 
 Reference half of this README — everything you need to reason about ActiveMQ Classic, with diagrams. Each section stands alone; skim the diagrams first, read the prose when needed. (See [Table of Contents](#table-of-contents) at the top for the full section list.)
 
 ---
 
-## <span style="color:hsl(190,80%,58%)">1. What is ActiveMQ</span>
+<a id="1-what-is-activemq"></a>
+## <span style="color:hsl(190,80%,58%)">1. 💡 What is ActiveMQ</span>
 
 ActiveMQ is a **message broker**: a server that sits between applications and moves messages from producers to consumers so the two sides never talk directly. Decoupling in three dimensions:
 
@@ -376,7 +408,8 @@ Two products share the name:
 ActiveMQ implements **JMS** (Jakarta Messaging) — the Java standard API for messaging — so application code depends on `jakarta.jms.*` interfaces, not on ActiveMQ classes. Swap the broker, keep the code.
 
 ---
-## <span style="color:hsl(328,80%,58%)">2. Broker architecture</span>
+<a id="2-broker-architecture"></a>
+## <span style="color:hsl(328,80%,58%)">2. 🏗️ Broker architecture</span>
 
 ```mermaid
 flowchart TB
@@ -413,7 +446,7 @@ flowchart TB
 
 Key pieces:
 
-- **Transport connectors** — one broker, many wire protocols. JVM clients use **OpenWire** (fastest, full feature set). Cross-language clients use AMQP/STOMP/MQTT. The URL `tcp://localhost:61616` in `application.yml` is the OpenWire connector.
+- **Transport connectors** — one broker, many wire protocols. JVM clients use **OpenWire** (fastest, full feature set). Cross-language clients use AMQP/STOMP/MQTT. The URL `tcp://localhost:61616` in `application.yml` is the OpenWire connector — the only one this project's `broker/activemq.xml` enables, as in 6.3's default config.
 - **Broker core** — routing, security (authentication/authorization plugins), per-destination policies (memory limits, DLQ strategy, prefetch defaults).
 - **Destinations** — named queues and topics, created on demand by default (first producer/consumer creates them — that's why the project needs zero broker config).
 - **Persistence store** — messages marked persistent survive broker restart (see §11).
@@ -421,7 +454,8 @@ Key pieces:
 
 ---
 
-## <span style="color:hsl(105,80%,58%)">3. Destinations: queues</span>
+<a id="3-destinations-queues"></a>
+## <span style="color:hsl(105,80%,58%)">3. 📦 Destinations: queues</span>
 
 **Point-to-point.** Each message is delivered to **exactly one** consumer, no matter how many are attached. Undelivered messages wait — minutes or days — until someone consumes or they expire.
 
@@ -444,7 +478,8 @@ Use for: task distribution, order processing, anything where each unit of work m
 
 ---
 
-## <span style="color:hsl(243,80%,58%)">4. Destinations: topics</span>
+<a id="4-destinations-topics"></a>
+## <span style="color:hsl(243,80%,58%)">4. 📣 Destinations: topics</span>
 
 **Publish/subscribe.** Each message is delivered to **every** subscriber that is connected at publish time. Subscribers do not compete — they each get a full copy.
 
@@ -482,7 +517,8 @@ flowchart TB
 
 ---
 
-## <span style="color:hsl(20,80%,58%)">5. Anatomy of a message</span>
+<a id="5-anatomy-of-a-message"></a>
+## <span style="color:hsl(20,80%,58%)">5. ✉️ Anatomy of a message</span>
 
 ```mermaid
 flowchart TB
@@ -516,7 +552,8 @@ Details worth knowing:
 
 ---
 
-## <span style="color:hsl(158,80%,58%)">6. Message consumption: prefetch and dispatch</span>
+<a id="6-message-consumption-prefetch-and-dispatch"></a>
+## <span style="color:hsl(158,80%,58%)">6. ⚡ Message consumption: prefetch and dispatch</span>
 
 ActiveMQ **pushes** messages to consumers (unlike Kafka's pull). To keep pipelines full, it pushes ahead of consumption — the **prefetch buffer**.
 
@@ -536,20 +573,21 @@ sequenceDiagram
 - Default prefetch: **1000** for queues, very large for topics.
 - **Trade-off**: big prefetch = throughput (no round-trip per message); small prefetch = fairness. With prefetch 1000 and two consumers, the first may grab 1000 while the second sits idle — for slow tasks set prefetch to 1 so each consumer takes one at a time.
 - Configure per connection URL (`tcp://host:61616?jms.prefetchPolicy.queuePrefetch=1`) or per destination.
-- Our 34/33/33 round-robin split works because messages arrived faster than processing and the broker dealt them across the three *sessions* evenly.
+- The even split over the six worker consumers (§8) works because messages arrived faster than processing and the broker dealt them across the consumers in turn.
 
 ---
 
-## <span style="color:hsl(295,80%,58%)">7. Acknowledgement modes and transactions</span>
+<a id="7-acknowledgement-modes-and-transactions"></a>
+## <span style="color:hsl(295,80%,58%)">7. ✅ Acknowledgement modes and transactions</span>
 
 A message is only *gone* from the broker when acknowledged. Who acks, and when, defines your delivery guarantee:
 
-| Mode                  | Who acks                            | Guarantee                  | Notes                                              |
-|-----------------------|-------------------------------------|----------------------------|----------------------------------------------------|
-| `AUTO_ACKNOWLEDGE`    | Provider, after listener returns    | At-least-once              | Spring's default; redelivered if listener throws   |
-| `CLIENT_ACKNOWLEDGE`  | Your code (`message.acknowledge()`) | At-least-once              | Acks *all* messages consumed so far in the session |
-| `DUPS_OK_ACKNOWLEDGE` | Provider, lazily in batches         | At-least-once, dups likely | Fastest, use when idempotent                       |
-| Transacted session    | `session.commit()`                  | All-or-nothing batch       | Rollback ⇒ everything redelivered                  |
+| Mode                  | Who acks                              | Guarantee                                   | Notes                                                                                                                                                                                                                                                 |
+|-----------------------|---------------------------------------|---------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `AUTO_ACKNOWLEDGE`    | Provider, as the message is delivered | At-most-once in Spring's listener container | JMS default. A plain JMS [`MessageListener`][MessageListener] gets the message again when `onMessage` throws; Spring's [`DefaultMessageListenerContainer`][DefaultMessageListenerContainer] acks *before* your method runs, so nothing is redelivered |
+| `CLIENT_ACKNOWLEDGE`  | Your code (`message.acknowledge()`)   | At-least-once                               | Acks *all* messages consumed so far in the session                                                                                                                                                                                                    |
+| `DUPS_OK_ACKNOWLEDGE` | Provider, lazily in batches           | At-least-once, dups likely                  | Fastest, use when idempotent                                                                                                                                                                                                                          |
+| Transacted session    | `session.commit()`                    | All-or-nothing batch                        | Rollback ⇒ everything redelivered. **Spring Boot's default for [`@JmsListener`][JmsListener] containers**                                                                                                                                             |
 
 ```mermaid
 flowchart TB
@@ -561,11 +599,14 @@ flowchart TB
     rd -->|no| dlq[["ActiveMQ.DLQ"]]
 ```
 
+This project runs with Boot's default: no transaction manager and `spring.jms.listener.session.transacted` unset, so [`DefaultJmsListenerContainerFactoryConfigurer`][DefaultJmsListenerContainerFactoryConfigurer] makes every listener session transacted. The session commits when the listener method returns and rolls back when it throws, which is what turns an exception into redelivery and, eventually, `DLQ.<queue>` (§12).
+
 **Exactly-once does not exist** over the wire — you get at-least-once plus an idempotent consumer (dedupe on `JMSMessageID`/business key), or transactions within one broker. Design consumers to tolerate duplicates.
 
 ---
 
-## <span style="color:hsl(73,80%,58%)">8. Competing consumers and round-robin</span>
+<a id="8-competing-consumers-and-round-robin"></a>
+## <span style="color:hsl(73,80%,58%)">8. 🔁 Competing consumers and round-robin</span>
 
 The scaling pattern this project demos with the bulk endpoint. N consumers on one queue; the broker distributes messages among them — with equal prefetch and processing speed, effectively **round-robin**.
 
@@ -582,11 +623,12 @@ flowchart LR
 - Ordering across consumers is **lost** — see message groups (§13) when a sub-stream must stay ordered.
 - In Spring this is one line: listener container `concurrency = "3-3"` (three sessions competing on the same queue).
 
-Measured in this project (100-message burst): threads split 34/33/33 with `seq` alternating thread-1, thread-2, thread-3, thread-1…
+Measured in this project (20-message burst over six consumers, workerA and workerB with three each): every consumer got every sixth message, so seqs arrive in runs of three per worker (`1–3 → workerB, 4–6 → workerA, …`).
 
 ---
 
-## <span style="color:hsl(210,80%,58%)">9. Durable subscriptions</span>
+<a id="9-durable-subscriptions"></a>
+## <span style="color:hsl(210,80%,58%)">9. 📌 Durable subscriptions</span>
 
 Plain topic subscribers miss messages published while they're offline. A **durable subscription** makes the broker remember the subscriber and buffer what it missed.
 
@@ -610,7 +652,8 @@ sequenceDiagram
 
 ---
 
-## <span style="color:hsl(348,80%,58%)">10. Virtual topics</span>
+<a id="10-virtual-topics"></a>
+## <span style="color:hsl(348,80%,58%)">10. 🪄 Virtual topics</span>
 
 The best of both worlds and the core trick of this project's round-robin demo. Publish **once** to a topic; consume from **queues**.
 
@@ -646,10 +689,12 @@ Gotchas:
 - Names are magic: default prefixes `VirtualTopic.` and `Consumer.` are configurable broker-side but the convention is the API.
 - A group that has *never* connected gets nothing retroactively — the queue must exist (first consumer creates it) before messages are copied in.
 - Copies are independent: workerA nacking a message into DLQ doesn't affect workerB's copy.
+- Group queues outlive their consumers: once `Consumer.<group>.VirtualTopic.<name>` exists it gets a copy of every message, consumer or not. This project once used separate `Consumer.workerA.*` / `Consumer.workerB.*` queues; a broker volume from that time still had 43 messages piling up in each of them. Delete retired group queues in the console.
 
 ---
 
-## <span style="color:hsl(125,80%,58%)">11. Persistence: KahaDB</span>
+<a id="11-persistence-kahadb"></a>
+## <span style="color:hsl(125,80%,58%)">11. 💾 Persistence: KahaDB</span>
 
 Where persistent messages live between arrival and ack. KahaDB is a **write-ahead journal + index**, purpose-built for messaging (append-heavy, delete-on-ack).
 
@@ -679,7 +724,8 @@ flowchart LR
 
 ---
 
-## <span style="color:hsl(263,80%,58%)">12. Redelivery and dead-letter queues</span>
+<a id="12-redelivery-and-dead-letter-queues"></a>
+## <span style="color:hsl(263,80%,58%)">12. ☠️ Redelivery and dead-letter queues</span>
 
 When a listener throws, the message is redelivered; when it keeps failing, it's parked in a **dead-letter queue** instead of poisoning the consumer forever.
 
@@ -691,14 +737,15 @@ flowchart LR
     dlq --> ops["operator: inspect in console,<br/>fix cause, move back or discard"]
 ```
 
-- Default policy: 6 redeliveries, then to the shared `ActiveMQ.DLQ`. Configure per destination: individual DLQs (`queue.work.DLQ`), backoff/exponential delay between attempts, whether non-persistent messages also DLQ.
+- Two halves, two places. The **client** decides when to give up: its [`RedeliveryPolicy`][RedeliveryPolicy] defaults to 6 redeliveries, 1s apart (this project: 3, with 0.5s/1s/2s backoff). The **broker** decides where the message goes: by default the shared `ActiveMQ.DLQ`; an `individualDeadLetterStrategy` gives each queue its own (`ActiveMQ.DLQ.Queue.work` by default, `DLQ.work` with this project's prefix), and also decides whether non-persistent and expired messages are dead-lettered (expired ones are, by default).
 - Redelivered messages carry `JMSRedelivered=true` and `JMSXDeliveryCount` — consumers can branch on it ("third attempt → log loudly").
 - DLQ is a normal queue: browsable, consumable — build a small "retry" tool or use the console's Move operation.
 - **Poison message** = message that always fails (bad JSON, impossible state). Without DLQ it would loop forever, blocking everything behind it at prefetch 1.
 
 ---
 
-## <span style="color:hsl(40,80%,58%)">13. Selectors, exclusive consumers, message groups</span>
+<a id="13-selectors-exclusive-consumers-message-groups"></a>
+## <span style="color:hsl(40,80%,58%)">13. 🎯 Selectors, exclusive consumers, message groups</span>
 
 Three routing refinements, all consumer-side:
 
@@ -736,7 +783,8 @@ Per-order strict ordering **and** horizontal scaling — same idea as Kafka part
 
 ---
 
-## <span style="color:hsl(178,80%,58%)">14. Scheduled and delayed delivery</span>
+<a id="14-scheduled-and-delayed-delivery"></a>
+## <span style="color:hsl(178,80%,58%)">14. ⏰ Scheduled and delayed delivery</span>
 
 Broker-side timer (enable with `schedulerSupport="true"`). Producer stamps delay properties; broker holds the message and enqueues at the right moment.
 
@@ -762,7 +810,8 @@ Use for: retry-with-backoff queues, reminder events, SLA timers. (The console's 
 
 ---
 
-## <span style="color:hsl(315,80%,58%)">15. Memory limits and flow control</span>
+<a id="15-memory-limits-and-flow-control"></a>
+## <span style="color:hsl(315,80%,58%)">15. 🚦 Memory limits and flow control</span>
 
 The broker protects itself from fast producers + slow consumers with a hierarchy of limits:
 
@@ -784,7 +833,8 @@ flowchart TB
 
 ---
 
-## <span style="color:hsl(93,80%,58%)">16. High availability and networks of brokers</span>
+<a id="16-high-availability-and-networks-of-brokers"></a>
+## <span style="color:hsl(93,80%,58%)">16. 🛡️ High availability and networks of brokers</span>
 
 **Master/slave (shared store)** — the classic HA pair. Both brokers point at the same KahaDB; whoever holds the file lock is master, the other waits. Clients use a failover URL and reconnect automatically.
 
@@ -817,7 +867,8 @@ Rule of thumb: messages flow **toward demand** — a broker only forwards a queu
 
 ---
 
-## <span style="color:hsl(230,80%,58%)">17. Spring Boot integration model</span>
+<a id="17-spring-boot-integration-model"></a>
+## <span style="color:hsl(230,80%,58%)">17. 🌱 Spring Boot integration model</span>
 
 What `spring-boot-starter-activemq` wires for you, and how the pieces in this repo connect:
 
@@ -840,13 +891,14 @@ flowchart TB
 
 - **[`ConnectionFactory`][ConnectionFactory]** — auto-configured from `spring.activemq.*` properties. Production tip: wrap in a pooled factory (`spring.activemq.pool.enabled=true` with the pooled-jms dependency) — creating raw connections per send is expensive.
 - **[`JmsTemplate`][JmsTemplate]** — thread-safe sender; `convertAndSend(dest, obj, postProcessor)` runs the object through the [`MessageConverter`][MessageConverter] bean and lets the post-processor stamp properties (our `messageId`, `seq`).
-- **[`@JmsListener`][JmsListener]** — each annotation gets a listener container from a factory. The container owns sessions/consumers (concurrency), invokes your method, acks on normal return, triggers redelivery on exception. Two factories in this project: default (topic mode, concurrency 1) and `queueListenerFactory` (queue mode, concurrency 3).
+- **[`@JmsListener`][JmsListener]** — each annotation gets a listener container from a factory. The container owns sessions/consumers (concurrency), invokes your method, acks on normal return, triggers redelivery on exception. Three factories in this project: the default one (topic mode, concurrency 1), `queueListenerFactory` (queue mode; each worker listener asks for concurrency 3) and `durableTopicListenerFactory` (durable topic subscription on its own connection with a `clientId`).
 - **`MessageConverter`** — single bean shared by both directions; the `_event` type-id property maps records without leaking Java class names into the wire format.
 - **`pub-sub-domain`** — the yml switch that decides whether unadorned destinations mean topics or queues; a container factory can override it (exactly what `queueListenerFactory` does).
 
 ---
 
-## <span style="color:hsl(8,80%,58%)">18. Monitoring: console, JMX, advisory topics</span>
+<a id="18-monitoring-console-jmx-advisory-topics"></a>
+## <span style="color:hsl(8,80%,58%)">18. 📊 Monitoring: console, JMX, advisory topics</span>
 
 **Web console** (`:8161/admin`) — Queues (pending/enqueued/dequeued, browse bodies, purge, move), Topics (counters only), Subscribers (durable subs), Connections, Scheduled, Send (inject test messages by hand).
 
@@ -870,7 +922,8 @@ flowchart LR
 
 ---
 
-## <span style="color:hsl(145,80%,58%)">19. ActiveMQ vs Kafka vs RabbitMQ</span>
+<a id="19-activemq-vs-kafka-vs-rabbitmq"></a>
+## <span style="color:hsl(145,80%,58%)">19. ⚖️ ActiveMQ vs Kafka vs RabbitMQ</span>
 
 |                        | ActiveMQ Classic                          | Kafka                                                    | RabbitMQ                         |
 |------------------------|-------------------------------------------|----------------------------------------------------------|----------------------------------|
@@ -889,38 +942,45 @@ The virtual-topic pattern in this repo is ActiveMQ speaking Kafka's dialect: `Vi
 
 ---
 
-## <span style="color:hsl(283,80%,58%)">20. How this project maps to all of the above</span>
+<a id="20-how-this-project-maps-to-all-of-the-above"></a>
+## <span style="color:hsl(283,80%,58%)">20. 🗺️ How this project maps to all of the above</span>
 
-| Concept (section)               | Where it lives in this repo                                                                               |
-|---------------------------------|-----------------------------------------------------------------------------------------------------------|
-| Plain topic subscribers (§4)    | direct subscribers on `VirtualTopic.orders`: `OrderCreatedEventListeners` + `DurableOrderListener`                         |
-| Typed messages, properties (§5) | `_event` type id, `messageId`, `seq` properties; JSON [`TextMessage`][TextMessage]                                       |
-| Push + prefetch (§6)            | defaults; visible in even 34/33/33 spread                                                                 |
-| Auto-ack / redelivery (§7)      | Spring default `AUTO_ACKNOWLEDGE`; throw in a listener to watch redelivery → `DLQ.<queue>`                |
-| Competing consumers (§8)        | `queueListenerFactory` concurrency 3-3                                                                    |
-| Virtual topics (§10)            | `VirtualTopic.orders` → `Consumer.workers.VirtualTopic.orders` (shared, competing); bulk endpoint        |
-| KahaDB (§11)                    | `activemq-data` docker volume                                                                             |
-| Console (§18)                   | compose port 8161; worker queues browsable                                                                |
-| Spring wiring (§17)             | `JmsEventConverterConfig` (common), `QueueListenerConfig` (consumer), `EventPublisherService` (publisher) |
+| Concept (section)               | Where it lives in this repo                                                                                      |
+|---------------------------------|------------------------------------------------------------------------------------------------------------------|
+| Plain topic subscribers (§4)    | direct subscriber on `VirtualTopic.orders`: `OrderCreatedEventListeners`                                         |
+| Typed messages, properties (§5) | `_event` type id, `messageId`, `seq` properties; JSON [`TextMessage`][TextMessage]                               |
+| Push + prefetch (§6)            | defaults; visible in the even spread over six worker consumers                                                   |
+| Transactions / redelivery (§7)  | Boot's transacted listener sessions + `RedeliveryConfig`; `app.listener.fail-seq-multiple` → `DLQ.<queue>` (§12) |
+| Competing consumers (§8)        | `queueListenerFactory`: workerA + workerB, concurrency 3-3 each, on one queue                                    |
+| Durable subscriptions (§9)      | `DurableOrderListener` on `durableTopicListenerFactory` (clientId `activemq-consumer`)                           |
+| Virtual topics (§10)            | `VirtualTopic.orders` → `Consumer.workers.VirtualTopic.orders` (shared, competing); bulk endpoint                |
+| KahaDB (§11)                    | `activemq-data` docker volume                                                                                    |
+| Console (§18)                   | compose port 8161; worker queues browsable                                                                       |
+| Spring wiring (§17)             | `JmsEventConverterConfig` (common), `QueueListenerConfig` (consumer), `EventPublisherService` (publisher)        |
 
 Experiments to try next, ordered by effort:
 
-1. Throw an exception for `seq % 10 == 0` in a worker listener → watch redelivery then `ActiveMQ.DLQ` fill (§12).
+1. Run the consumer with `--app.listener.fail-seq-multiple=10` → watch the 0.5s/1s/2s redeliveries, then `DLQ.Consumer.workers.VirtualTopic.orders` fill (§12).
 2. Set `?consumer.exclusive=true` on a worker queue destination → observe one thread taking everything (§13).
 3. Stamp `JMSXGroupID = orderId` in the bulk publisher → per-order stickiness across the 3 consumers (§13).
-4. Add `AMQ_SCHEDULED_DELAY` to one event (enable `schedulerSupport`) → delayed consumption (§14).
+4. Add `AMQ_SCHEDULED_DELAY` to one event (enable `schedulerSupport` on the `<broker>` element in `broker/activemq.xml`) → delayed consumption (§14).
 5. Stop the consumer, publish a burst, check console: worker queues hold messages (retention), plain topics dropped theirs (§3 vs §4).
 
 <!-- Library classes mentioned above, linked to their source at the versions this project builds with. -->
 
 [CachingConnectionFactory]: https://github.com/spring-projects/spring-framework/blob/v7.0.9/spring-jms/src/main/java/org/springframework/jms/connection/CachingConnectionFactory.java
 [ConnectionFactory]: https://github.com/jakartaee/messaging/blob/3.1.0-RELEASE/api/src/main/java/jakarta/jms/ConnectionFactory.java
+[DefaultJmsListenerContainerFactoryConfigurer]: https://github.com/spring-projects/spring-boot/blob/v4.1.1/module/spring-boot-jms/src/main/java/org/springframework/boot/jms/autoconfigure/DefaultJmsListenerContainerFactoryConfigurer.java
+[DefaultMessageListenerContainer]: https://github.com/spring-projects/spring-framework/blob/v7.0.9/spring-jms/src/main/java/org/springframework/jms/listener/DefaultMessageListenerContainer.java
 [DeliveryMode]: https://github.com/jakartaee/messaging/blob/3.1.0-RELEASE/api/src/main/java/jakarta/jms/DeliveryMode.java
 [Header]: https://github.com/spring-projects/spring-framework/blob/v7.0.9/spring-messaging/src/main/java/org/springframework/messaging/handler/annotation/Header.java
 [JacksonJsonMessageConverter]: https://github.com/spring-projects/spring-framework/blob/v7.0.9/spring-jms/src/main/java/org/springframework/jms/support/converter/JacksonJsonMessageConverter.java
 [JmsListener]: https://github.com/spring-projects/spring-framework/blob/v7.0.9/spring-jms/src/main/java/org/springframework/jms/annotation/JmsListener.java
+[JMSSecurityException]: https://github.com/jakartaee/messaging/blob/3.1.0-RELEASE/api/src/main/java/jakarta/jms/JMSSecurityException.java
 [JmsTemplate]: https://github.com/spring-projects/spring-framework/blob/v7.0.9/spring-jms/src/main/java/org/springframework/jms/core/JmsTemplate.java
 [MessageConverter]: https://github.com/spring-projects/spring-framework/blob/v7.0.9/spring-jms/src/main/java/org/springframework/jms/support/converter/MessageConverter.java
+[MessageListener]: https://github.com/jakartaee/messaging/blob/3.1.0-RELEASE/api/src/main/java/jakarta/jms/MessageListener.java
 [MessagePostProcessor]: https://github.com/spring-projects/spring-framework/blob/v7.0.9/spring-jms/src/main/java/org/springframework/jms/core/MessagePostProcessor.java
 [QueueBrowser]: https://github.com/jakartaee/messaging/blob/3.1.0-RELEASE/api/src/main/java/jakarta/jms/QueueBrowser.java
+[RedeliveryPolicy]: https://github.com/apache/activemq/blob/activemq-6.2.9/activemq-client/src/main/java/org/apache/activemq/RedeliveryPolicy.java
 [TextMessage]: https://github.com/jakartaee/messaging/blob/3.1.0-RELEASE/api/src/main/java/jakarta/jms/TextMessage.java
