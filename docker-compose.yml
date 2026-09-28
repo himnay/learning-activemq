@@ -1,11 +1,28 @@
 services:
+  # One-shot: hand the data volume to the broker's user. apache/activemq runs as the
+  # non-root user "activemq" (uid 999); volumes written by the older root-run images are
+  # owned by root, and on those the broker just waits forever for the KahaDB lock.
+  activemq-data-owner:
+    image: apache/activemq:6.3.2
+    user: root
+    entrypoint: ["chown", "-R", "activemq:activemq", "/opt/apache-activemq/data"]
+    volumes:
+      - activemq-data:/opt/apache-activemq/data
+    restart: "no"
+
   activemq:
-    image: apache/activemq-classic:6.2.0
+    # ActiveMQ Classic images are published as apache/activemq now
+    # (apache/activemq-classic stopped at 6.2.0).
+    image: apache/activemq:6.3.2
     container_name: activemq
+    depends_on:
+      activemq-data-owner:
+        condition: service_completed_successfully
     ports:
-      - "61616:61616"   # OpenWire — JMS clients connect here
-      - "8161:8161"     # Web console — http://localhost:8161 (admin/admin)
+      - "127.0.0.1:61616:61616"   # OpenWire — JMS clients connect here
+      - "127.0.0.1:8161:8161"     # Web console — http://localhost:8161/admin/ (admin/admin)
     environment:
+      # written into conf/credentials.properties; broker/activemq.xml's authentication plugin reads them
       ACTIVEMQ_CONNECTION_USER: admin
       ACTIVEMQ_CONNECTION_PASSWORD: admin
       ACTIVEMQ_WEB_USER: admin
@@ -17,8 +34,11 @@ services:
       retries: 5
     volumes:
       - activemq-data:/opt/apache-activemq/data
-      # custom broker config — per-queue DLQs (DLQ.<queue> instead of shared ActiveMQ.DLQ)
+      # custom broker config: per-queue DLQs (DLQ.<queue> instead of the shared ActiveMQ.DLQ)
+      # and client authentication
       - ./broker/activemq.xml:/opt/apache-activemq/conf/activemq.xml:ro
+      # web console: also accept requests that arrive through Docker's port mapping
+      - ./broker/jetty-security.xml:/opt/apache-activemq/conf/jetty/jetty-security.xml:ro
 
 volumes:
   activemq-data:
