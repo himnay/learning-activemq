@@ -111,7 +111,7 @@ Unlike Kafka headers, JMS properties are broker-visible: usable in consumer sele
 
 ## <span style="color:hsl(203,80%,58%)">Quick start</span>
 
-Prerequisites: Java 25, Maven, Docker (for the ActiveMQ broker).
+Prerequisites: Java 27, Maven, Docker (for the ActiveMQ broker).
 
 ```bash
 # 1. Start ActiveMQ
