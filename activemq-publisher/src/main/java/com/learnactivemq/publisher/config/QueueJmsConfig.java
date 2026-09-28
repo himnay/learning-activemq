@@ -20,6 +20,9 @@ import org.springframework.jms.support.converter.MessageConverter;
 @Configuration
 public class QueueJmsConfig {
 
+    /** How long a quote request waits for its reply, and how long it lives on the queue. */
+    public static final long REQUEST_TIMEOUT_MS = 5000;
+
     /** Defines the jms template bean. */
     @Bean
     @Primary
@@ -42,9 +45,13 @@ public class QueueJmsConfig {
         JmsTemplate template = new JmsTemplate(connectionFactory);
         template.setMessageConverter(messageConverter);
         template.setPubSubDomain(false);
-        template.setReceiveTimeout(5000);   // give up if no responder answers in 5s
+        template.setReceiveTimeout(REQUEST_TIMEOUT_MS);   // give up if no responder answers in time
         template.setExplicitQosEnabled(true);
         template.setDeliveryPersistent(true);
+        // Expire the request together with the wait: an answer that comes later goes to a temporary
+        // reply queue the requester has already deleted, so the responder's reply fails and the
+        // request ends up redelivered and dead-lettered instead of simply being dropped.
+        template.setTimeToLive(REQUEST_TIMEOUT_MS);
         return template;
     }
 }

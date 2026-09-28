@@ -7,6 +7,7 @@ import static org.springframework.boot.test.context.SpringBootTest.WebEnvironmen
 import com.learnactivemq.common.event.OrderCreatedEvent;
 import com.learnactivemq.common.event.OrderQuoteReply;
 import com.learnactivemq.common.event.OrderQuoteRequest;
+import com.learnactivemq.publisher.config.QueueJmsConfig;
 import com.learnactivemq.publisher.dto.BulkPublishResponse;
 import com.learnactivemq.publisher.dto.OrderRequest;
 import com.learnactivemq.publisher.support.FixtureLoader;
@@ -31,6 +32,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.jms.annotation.EnableJms;
 import org.springframework.jms.annotation.JmsListener;
 import org.springframework.jms.config.DefaultJmsListenerContainerFactory;
+import org.springframework.jms.support.JmsHeaders;
+import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 import org.springframework.test.context.ActiveProfiles;
 import tools.jackson.databind.ObjectMapper;
@@ -60,6 +63,9 @@ class EventPublishingIntegrationTest {
     @Autowired
     private OrderCreatedTopicProbe topicProbe;
 
+    @Autowired
+    private StubQuoteResponder quoteResponder;
+
     @Value("${app.topics.virtual-orders}")
     private String virtualOrdersTopic;
 
@@ -71,6 +77,7 @@ class EventPublishingIntegrationTest {
         positiveFixtures = new FixtureLoader(objectMapper, "fixtures/order-requests-positive.json");
         negativeFixtures = new FixtureLoader(objectMapper, "fixtures/order-requests-negative.json");
         topicProbe.received.clear();
+        quoteResponder.expirations.clear();
     }
 
     @Test
@@ -106,6 +113,20 @@ class EventPublishingIntegrationTest {
         List<MessageFixture> quoteRequests = positiveFixtures.ofType("quote-request");
         assertThat(quoteRequests).isNotEmpty();
         assertQuoteReplies(positiveFixtures, quoteRequests, true);
+    }
+
+    @Test
+    void quoteRequests_expireWithTheReplyTimeout() {
+        long sentAt = System.currentTimeMillis();
+        OrderRequest request = positiveFixtures.payloadAs(positiveFixtures.ofType("quote-request").getFirst(), OrderRequest.class);
+
+        restTemplate.postForEntity("/v1/orders/quote", request, OrderQuoteReply.class);
+
+        // an unanswered request must not outlive the requester's wait (QueueJmsConfig.REQUEST_TIMEOUT_MS)
+        assertThat(quoteResponder.expirations).singleElement()
+                .satisfies(expiration -> assertThat(expiration)
+                        .isBetween(sentAt + QueueJmsConfig.REQUEST_TIMEOUT_MS,
+                                System.currentTimeMillis() + QueueJmsConfig.REQUEST_TIMEOUT_MS));
     }
 
     @Test
@@ -187,8 +208,13 @@ class EventPublishingIntegrationTest {
 
         private static final BigDecimal APPROVAL_LIMIT = new BigDecimal("5000");
 
+        /** JMSExpiration of every request received (null when the request never expires). */
+        private final List<Long> expirations = new CopyOnWriteArrayList<>();
+
         @JmsListener(destination = "${app.queues.quote}", containerFactory = "testQueueListenerFactory")
-        public OrderQuoteReply onQuoteRequest(OrderQuoteRequest request) {
+        public OrderQuoteReply onQuoteRequest(OrderQuoteRequest request,
+                                              @Header(name = JmsHeaders.EXPIRATION, required = false) Long expiration) {
+            expirations.add(expiration);
             BigDecimal total = request.unitPrice().multiply(BigDecimal.valueOf(request.quantity()));
             boolean approved = total.compareTo(APPROVAL_LIMIT) <= 0;
             return new OrderQuoteReply(approved, total, approved ? "within approval limit" : "exceeds approval limit");

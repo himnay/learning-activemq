@@ -6,6 +6,7 @@ import static org.awaitility.Awaitility.await;
 import com.learnactivemq.common.event.OrderCreatedEvent;
 import com.learnactivemq.common.event.OrderQuoteReply;
 import com.learnactivemq.common.event.OrderQuoteRequest;
+import com.learnactivemq.consumer.config.QueueListenerConfig;
 import com.learnactivemq.consumer.support.FixtureLoader;
 import jakarta.jms.ConnectionFactory;
 import jakarta.jms.Message;
@@ -14,6 +15,8 @@ import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
+import org.apache.activemq.ActiveMQConnectionFactory;
+import org.apache.activemq.RedeliveryPolicy;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,7 +28,9 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jms.annotation.EnableJms;
 import org.springframework.jms.annotation.JmsListener;
+import org.springframework.jms.config.JmsListenerEndpointRegistry;
 import org.springframework.jms.core.JmsTemplate;
+import org.springframework.jms.listener.DefaultMessageListenerContainer;
 import org.springframework.jms.support.converter.MessageConverter;
 import org.springframework.stereotype.Component;
 import org.springframework.test.context.ActiveProfiles;
@@ -60,6 +65,9 @@ class OrderMessagingIntegrationTest {
 
     @Autowired
     private OrderCreatedTopicProbe topicProbe;
+
+    @Autowired
+    private JmsListenerEndpointRegistry listenerRegistry;
 
     @Value("${app.topics.virtual-orders}")
     private String virtualOrdersTopic;
@@ -104,6 +112,22 @@ class OrderMessagingIntegrationTest {
         List<OrderQuoteRequest> requests = negativeFixtures.ofType("order-quote-request", OrderQuoteRequest.class);
         assertThat(requests).isNotEmpty();
         assertQuoteReplies(requests, false);
+    }
+
+    @Test
+    void durableSubscriber_usesItsOwnClientIdAndTheAppRedeliveryPolicy() {
+        DefaultMessageListenerContainer durable = listenerRegistry.getListenerContainers().stream()
+                .map(DefaultMessageListenerContainer.class::cast)
+                .filter(DefaultMessageListenerContainer::isSubscriptionDurable)
+                .findFirst().orElseThrow();
+
+        assertThat(durable.getClientId()).isEqualTo(QueueListenerConfig.DURABLE_CLIENT_ID);
+        assertThat(durable.isRunning()).isTrue();
+        // the private (non-bean) connection factory must still get RedeliveryConfig's customizer
+        RedeliveryPolicy policy = ((ActiveMQConnectionFactory) durable.getConnectionFactory()).getRedeliveryPolicy();
+        assertThat(policy.getMaximumRedeliveries()).isEqualTo(3);
+        assertThat(policy.getInitialRedeliveryDelay()).isEqualTo(500);
+        assertThat(policy.isUseExponentialBackOff()).isTrue();
     }
 
     private void assertQuoteReplies(List<OrderQuoteRequest> requests, boolean expectedApproved) throws Exception {
