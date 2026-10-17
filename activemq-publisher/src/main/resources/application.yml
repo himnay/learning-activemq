@@ -1,3 +1,6 @@
+server:
+  port: 8080
+
 spring:
   application:
     name: activemq-publisher
@@ -7,9 +10,6 @@ spring:
     password: ${ACTIVEMQ_PASSWORD:admin}
   jms:
     pub-sub-domain: true   # publish to topics, not queues
-
-server:
-  port: 8080
 
 app:
   topics:
