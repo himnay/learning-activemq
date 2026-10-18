@@ -35,8 +35,8 @@ public class EventController {
     }
 
     /** Query-param constraints (e.g. count) throw here rather than the @Valid body path — map to 400 too. */
-    @ExceptionHandler(ConstraintViolationException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
+    @ExceptionHandler(ConstraintViolationException.class)
     public String onConstraintViolation(ConstraintViolationException ex) {
         return ex.getMessage();
     }
